@@ -68,18 +68,21 @@ jobs:
           GEMINI_MODEL_FALLBACK: ${{ vars.GEMINI_MODEL_FALLBACK || 'gemini-2.0-flash-lite' }}
           GEMINI_REQUEST_DELAY: '3.0'
           
+          # 【模型降级配置】当 Gemini 额度用完时，使用 DeepSeek
+          LITELLM_MODEL: gemini/gemini-2.0-flash
+          LITELLM_FALLBACK_MODELS: openai/deepseek-chat
+          
           # 其他 AI 备选（可选）
           AIHUBMIX_KEY: ${{ secrets.AIHUBMIX_KEY }}
           
-          # 【DeepSeek 推荐配置】
+          # 【DeepSeek 配置 - 当 Gemini 额度用完时使用】
           # 从 https://platform.deepseek.com 获取 API Key
-          # 当 Gemini 额度用完时自动使用 DeepSeek
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          # DeepSeek 通过 OpenAI 兼容接口调用
+          OPENAI_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          OPENAI_BASE_URL: https://api.deepseek.com/v1
+          OPENAI_MODEL: deepseek-chat
           
-          # OpenAI 兼容 API（如 DeepSeek、通义千问等）
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || secrets.OPENAI_BASE_URL }}
-          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || secrets.OPENAI_MODEL }}
+          # Anthropic Claude（备选）
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
           # ==========================================
