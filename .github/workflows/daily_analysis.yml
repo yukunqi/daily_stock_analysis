@@ -63,8 +63,9 @@ jobs:
           # ==========================================
           # 从 https://aistudio.google.com/app/apikey 获取
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
-          GEMINI_MODEL_FALLBACK: ${{ vars.GEMINI_MODEL_FALLBACK || 'gemini-2.0-flash' }}
+          # 注意：Gemini 2.5 Flash 免费版每天限制20次，超额后自动降级到 2.0 Flash
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.0-flash' }}
+          GEMINI_MODEL_FALLBACK: ${{ vars.GEMINI_MODEL_FALLBACK || 'gemini-2.0-flash-lite' }}
           GEMINI_REQUEST_DELAY: '3.0'
           
           # 其他 AI 备选（可选）
