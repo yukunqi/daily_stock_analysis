@@ -140,7 +140,7 @@ jobs:
           # 系统配置
           # ==========================================
           LOG_LEVEL: INFO
-          MAX_WORKERS: ${{ vars.MAX_WORKERS || '3' }}
+          MAX_WORKERS: ${{ vars.MAX_WORKERS || '5' }}
           # 降低 Pytdx 优先级（GitHub Actions 连接超时严重，设为 999 使其最后尝试）
           PYTDX_PRIORITY: 999
           ENABLE_CHIP_DISTRIBUTION: 'false'
