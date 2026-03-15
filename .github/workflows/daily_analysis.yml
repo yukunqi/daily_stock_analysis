@@ -59,28 +59,27 @@ jobs:
       - name: 执行股票分析
         env:
           # ==========================================
-          # AI 配置（Gemini 免费版推荐）
+          # AI 配置（DeepSeek 主力模型）
           # ==========================================
-          # 从 https://aistudio.google.com/app/apikey 获取
+          # 【主力模型】DeepSeek - 从 https://platform.deepseek.com 获取
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          
+          # 【主力模型配置】
+          LITELLM_MODEL: deepseek/deepseek-chat
+          # 可选：使用推理模型 deepseek-reasoner（R1）进行深度分析
+          # LITELLM_MODEL: deepseek/deepseek-reasoner
+          
+          # 【备选模型】当 DeepSeek 不可用时，使用 Gemini
+          LITELLM_FALLBACK_MODELS: gemini/gemini-2.0-flash
+          
+          # Gemini 配置（备选）
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # 注意：Gemini 2.5 Flash 免费版每天限制20次，超额后自动降级到 2.0 Flash
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.0-flash' }}
           GEMINI_MODEL_FALLBACK: ${{ vars.GEMINI_MODEL_FALLBACK || 'gemini-2.0-flash-lite' }}
           GEMINI_REQUEST_DELAY: '3.0'
           
-          # 【模型降级配置】当 Gemini 额度用完时，使用 DeepSeek
-          LITELLM_MODEL: gemini/gemini-2.0-flash
-          LITELLM_FALLBACK_MODELS: openai/deepseek-chat
-          
           # 其他 AI 备选（可选）
           AIHUBMIX_KEY: ${{ secrets.AIHUBMIX_KEY }}
-          
-          # 【DeepSeek 配置 - 当 Gemini 额度用完时使用】
-          # 从 https://platform.deepseek.com 获取 API Key
-          # DeepSeek 通过 OpenAI 兼容接口调用
-          OPENAI_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          OPENAI_BASE_URL: https://api.deepseek.com/v1
-          OPENAI_MODEL: deepseek-chat
           
           # Anthropic Claude（备选）
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -161,7 +160,8 @@ jobs:
           echo "📋 配置检查"
           echo "=========================================="
           echo "【AI 配置】"
-          echo "  Gemini API Key: $([ -n "$GEMINI_API_KEY" ] && echo '✅ 已配置' || echo '❌ 未配置')"
+          echo "  主力模型 (DeepSeek): $([ -n "$DEEPSEEK_API_KEY" ] && echo '✅ 已配置' || echo '❌ 未配置')"
+          echo "  备选模型 (Gemini): $([ -n "$GEMINI_API_KEY" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
           echo ""
           echo "【通知渠道】"
           echo "  PushPlus: $([ -n "$PUSHPLUS_TOKEN" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
