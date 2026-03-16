@@ -1,19 +1,23 @@
 name: 每日股票分析
 
 on:
-  # 定时触发 - 每天北京时间 08:30 (UTC 00:30)
+  # 定时触发 - 两个独立时间点
   schedule:
-    - cron: '30 0 * * 1-5'     # 周一到周五 UTC 00:30 = 北京时间 08:30
-  
+    # 个股分析：每天北京时间 08:30 (UTC 00:30)
+    - cron: '30 0 * * 1-5'     # 周一到周五 UTC 00:30
+    # 大盘复盘：每天北京时间 16:00 (UTC 08:00)
+    - cron: '0 8 * * 1-5'      # 周一到周五 UTC 08:00
+
   # 手动触发
   workflow_dispatch:
     inputs:
       mode:
         description: '运行模式'
         required: true
-        default: 'full'
+        default: 'auto'
         type: choice
         options:
+          - auto          # 自动判断（根据时间：08:30个股/16:00大盘）
           - full          # 完整分析（股票+大盘）
           - market-only   # 仅大盘复盘
           - stocks-only   # 仅股票分析
@@ -146,7 +150,25 @@ jobs:
           
         run: |
           # 判断运行模式
-          MODE="${{ github.event.inputs.mode || 'full' }}"
+          MODE="${{ github.event.inputs.mode || 'auto' }}"
+          
+          # 如果是定时触发，根据当前 UTC 时间自动判断运行模式
+          # UTC 00:30 (北京时间 08:30) -> 个股分析
+          # UTC 08:00 (北京时间 16:00) -> 大盘复盘
+          if [ "$MODE" = "auto" ]; then
+            CURRENT_HOUR=$(date -u '+%H')
+            CURRENT_MIN=$(date -u '+%M')
+            CURRENT_TIME="${CURRENT_HOUR}${CURRENT_MIN}"
+            
+            # UTC 08:00 = 800-859 时间段认为是大盘复盘
+            if [ "$CURRENT_HOUR" = "08" ]; then
+              MODE="market-only"
+              echo "⏰ 检测到 UTC 08:00，自动切换为大盘复盘模式"
+            else
+              MODE="stocks-only"
+              echo "⏰ 检测到 UTC ${CURRENT_HOUR}:${CURRENT_MIN}，自动切换为个股分析模式"
+            fi
+          fi
           
           echo "=========================================="
           echo "🚀 A股自选股智能分析系统"
@@ -215,3 +237,4 @@ jobs:
             echo "📜 最近日志（最后 30 行）:"
             tail -30 logs/stock_analysis_*.log 2>/dev/null || echo "无日志"
           fi
+
