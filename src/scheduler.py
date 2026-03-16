@@ -19,7 +19,7 @@ import sys
 import time
 import threading
 from datetime import datetime
-from typing import Callable, Optional
+from typing import Callable, Optional, Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +150,105 @@ class Scheduler:
         self._running = False
 
 
+class MultiScheduler:
+    """
+    多任务定时调度器
+    
+    支持多个独立定时任务，每个任务有自己的执行时间
+    """
+    
+    def __init__(self):
+        """初始化多任务调度器"""
+        try:
+            import schedule
+            self.schedule = schedule
+        except ImportError:
+            logger.error("schedule 库未安装，请执行: pip install schedule")
+            raise ImportError("请安装 schedule 库: pip install schedule")
+        
+        self.shutdown_handler = GracefulShutdown()
+        self._tasks: Dict[str, Callable] = {}
+        self._running = False
+    
+    def add_task(
+        self,
+        task_id: str,
+        task: Callable,
+        schedule_time: str,
+        run_immediately: bool = False
+    ):
+        """
+        添加定时任务
+        
+        Args:
+            task_id: 任务唯一标识
+            task: 要执行的任务函数
+            schedule_time: 每日执行时间，格式 "HH:MM"
+            run_immediately: 是否立即执行一次
+        """
+        self._tasks[task_id] = task
+        self.schedule.every().day.at(schedule_time).do(
+            self._safe_run_task, task_id=task_id
+        )
+        logger.info(f"[{task_id}] 已设置定时任务，执行时间: {schedule_time}")
+        
+        if run_immediately:
+            logger.info(f"[{task_id}] 立即执行一次任务...")
+            self._safe_run_task(task_id=task_id)
+    
+    def _safe_run_task(self, task_id: str):
+        """
+        安全执行任务（带异常捕获）
+        
+        Args:
+            task_id: 任务标识
+        """
+        task = self._tasks.get(task_id)
+        if task is None:
+            logger.warning(f"任务 {task_id} 不存在")
+            return
+        
+        try:
+            logger.info("=" * 50)
+            logger.info(f"[{task_id}] 定时任务开始执行 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info("=" * 50)
+            
+            task()
+            
+            logger.info(f"[{task_id}] 定时任务执行完成 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            
+        except Exception as e:
+            logger.exception(f"[{task_id}] 定时任务执行失败: {e}")
+    
+    def run(self):
+        """
+        运行调度器主循环
+        
+        阻塞运行，直到收到退出信号
+        """
+        self._running = True
+        logger.info("多任务调度器开始运行...")
+        
+        # 显示所有任务的下次执行时间
+        jobs = self.schedule.get_jobs()
+        for job in jobs:
+            logger.info(f"  任务下次执行: {job.next_run.strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        while self._running and not self.shutdown_handler.should_shutdown:
+            self.schedule.run_pending()
+            time.sleep(30)  # 每30秒检查一次
+            
+            # 每小时打印一次心跳
+            if datetime.now().minute == 0 and datetime.now().second < 30:
+                logger.info(f"调度器运行中... 当前任务数: {len(self._tasks)}")
+        
+        logger.info("调度器已停止")
+    
+    def stop(self):
+        """停止调度器"""
+        self._running = False
+
+
 def run_with_schedule(
     task: Callable,
     schedule_time: str = "18:00",
@@ -165,6 +264,34 @@ def run_with_schedule(
     """
     scheduler = Scheduler(schedule_time=schedule_time)
     scheduler.set_daily_task(task, run_immediately=run_immediately)
+    scheduler.run()
+
+
+def run_with_multi_schedule(
+    tasks: Dict[str, tuple],
+    run_immediately_map: Optional[Dict[str, bool]] = None
+):
+    """
+    便捷函数：使用多任务定时调度运行多个任务
+    
+    Args:
+        tasks: 任务字典，格式 {task_id: (task_func, schedule_time)}
+        run_immediately_map: 立即执行映射，格式 {task_id: True/False}
+    
+    Example:
+        tasks = {
+            'stock': (stock_analysis_task, '08:30'),
+            'market': (market_review_task, '16:00'),
+        }
+        run_with_multi_schedule(tasks, {'stock': True, 'market': False})
+    """
+    scheduler = MultiScheduler()
+    run_immediately_map = run_immediately_map or {}
+    
+    for task_id, (task, schedule_time) in tasks.items():
+        run_now = run_immediately_map.get(task_id, False)
+        scheduler.add_task(task_id, task, schedule_time, run_now)
+    
     scheduler.run()
 
 

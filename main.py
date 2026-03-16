@@ -663,8 +663,7 @@ def main() -> int:
         # 模式2: 定时任务模式
         if args.schedule or config.schedule_enabled:
             logger.info("模式: 定时任务")
-            logger.info(f"每日执行时间: {config.schedule_time}")
-
+            
             # Determine whether to run immediately:
             # Command line arg --no-run-immediately overrides config if present.
             # Otherwise use config (defaults to True).
@@ -672,18 +671,103 @@ def main() -> int:
             if getattr(args, 'no_run_immediately', False):
                 should_run_immediately = False
 
-            logger.info(f"启动时立即执行: {should_run_immediately}")
+            # Check if separate market review schedule is configured
+            market_review_time = getattr(config, 'market_review_schedule_time', None)
+            stock_time = config.schedule_time
 
-            from src.scheduler import run_with_schedule
+            if market_review_time and config.market_review_enabled:
+                # Use multi-scheduler for separate stock and market review times
+                logger.info(f"个股分析定时: {stock_time}")
+                logger.info(f"大盘复盘定时: {market_review_time}")
+                logger.info(f"启动时立即执行: {should_run_immediately}")
 
-            def scheduled_task():
-                run_full_analysis(config, args, stock_codes)
+                from src.scheduler import run_with_multi_schedule
+                from src.core.market_review import run_market_review
+                from src.notification import NotificationService
+                from src.search_service import SearchService
+                from src.analyzer import GeminiAnalyzer
 
-            run_with_schedule(
-                task=scheduled_task,
-                schedule_time=config.schedule_time,
-                run_immediately=should_run_immediately
-            )
+                def stock_analysis_task():
+                    """个股分析任务"""
+                    logger.info("[个股分析] 开始执行...")
+                    # Temporarily disable market review to run only stock analysis
+                    original_market_review = config.market_review_enabled
+                    config.market_review_enabled = False
+                    try:
+                        run_full_analysis(config, args, stock_codes)
+                    finally:
+                        config.market_review_enabled = original_market_review
+                    logger.info("[个股分析] 执行完成")
+
+                def market_review_task():
+                    """大盘复盘任务"""
+                    logger.info("[大盘复盘] 开始执行...")
+                    try:
+                        # Initialize required services
+                        notifier = NotificationService(
+                            enabled=not getattr(args, 'no_notify', False)
+                        )
+                        search_service = SearchService()
+                        
+                        # Initialize analyzer if API keys are available
+                        analyzer = None
+                        if config.litellm_model or config.gemini_api_keys or config.openai_api_keys:
+                            try:
+                                analyzer = GeminiAnalyzer(
+                                    search_service=search_service,
+                                    provider_priority=config.vision_provider_priority.split(','),
+                                )
+                            except Exception as e:
+                                logger.warning(f"Analyzer initialization failed: {e}")
+                        
+                        # Check trading day
+                        effective_region = None
+                        if not getattr(args, 'force_run', False) and getattr(config, 'trading_day_check_enabled', True):
+                            from src.core.trading_calendar import get_open_markets_today, compute_effective_region
+                            open_markets = get_open_markets_today()
+                            effective_region = compute_effective_region(
+                                getattr(config, 'market_review_region', 'cn') or 'cn', open_markets
+                            )
+                            if effective_region == '':
+                                logger.info("今日非交易日，跳过大盘复盘")
+                                return
+                        
+                        run_market_review(
+                            notifier=notifier,
+                            analyzer=analyzer,
+                            search_service=search_service,
+                            send_notification=not getattr(args, 'no_notify', False),
+                            override_region=effective_region,
+                        )
+                    except Exception as e:
+                        logger.exception(f"[大盘复盘] 执行失败: {e}")
+                    logger.info("[大盘复盘] 执行完成")
+
+                tasks = {
+                    'stock': (stock_analysis_task, stock_time),
+                    'market': (market_review_task, market_review_time),
+                }
+                run_immediately_map = {
+                    'stock': should_run_immediately,
+                    'market': should_run_immediately,
+                }
+
+                run_with_multi_schedule(tasks, run_immediately_map)
+            else:
+                # Use single scheduler (backward compatible)
+                logger.info(f"每日执行时间: {stock_time}")
+                logger.info(f"启动时立即执行: {should_run_immediately}")
+
+                from src.scheduler import run_with_schedule
+
+                def scheduled_task():
+                    run_full_analysis(config, args, stock_codes)
+
+                run_with_schedule(
+                    task=scheduled_task,
+                    schedule_time=stock_time,
+                    run_immediately=should_run_immediately
+                )
             return 0
 
         # 模式3: 正常单次运行
