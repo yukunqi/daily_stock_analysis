@@ -55,7 +55,9 @@ class StockAnalysisPipeline:
         source_message: Optional[BotMessage] = None,
         query_id: Optional[str] = None,
         query_source: Optional[str] = None,
-        save_context_snapshot: Optional[bool] = None
+        save_context_snapshot: Optional[bool] = None,
+        enable_ai_analysis: bool = True,
+        enable_notifications: bool = True,
     ):
         """
         初始化调度器
@@ -78,8 +80,11 @@ class StockAnalysisPipeline:
         self.fetcher_manager = DataFetcherManager()
         # 不再单独创建 akshare_fetcher，统一使用 fetcher_manager 获取增强数据
         self.trend_analyzer = StockTrendAnalyzer()  # 趋势分析器
-        self.analyzer = GeminiAnalyzer()
-        self.notifier = NotificationService(source_message=source_message)
+        self.analyzer = GeminiAnalyzer() if enable_ai_analysis else None
+        self.notifier = NotificationService(
+            source_message=source_message,
+            suppress_missing_channel_warning=not enable_notifications,
+        )
         
         # 初始化搜索服务
         self.search_service = SearchService(
@@ -181,6 +186,10 @@ class StockAnalysisPipeline:
         Returns:
             AnalysisResult 或 None（如果分析失败）
         """
+        if self.analyzer is None:
+            logger.info(f"[{code}] AI 分析器未初始化，跳过分析")
+            return None
+
         try:
             # 获取股票名称（优先从实时行情获取真实名称）
             stock_name = self.fetcher_manager.get_stock_name(code)

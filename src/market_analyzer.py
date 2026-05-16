@@ -236,7 +236,7 @@ class MarketAnalyzer:
     #     except Exception as e:
     #         logger.warning(f"[大盘] 获取北向资金失败: {e}")
     
-    def search_market_news(self) -> List[Dict]:
+    def search_market_news(self, overview: Optional[MarketOverview] = None) -> List[Dict]:
         """
         搜索市场新闻
         
@@ -260,6 +260,11 @@ class MarketAnalyzer:
             # 根据 region 设置搜索上下文名称，避免美股搜索被解读为 A 股语境
             market_name = "大盘" if self.region == "cn" else "US market"
             for query in search_queries:
+                # We only need a compact set of market headlines for the review.
+                # Stop early to reduce flaky third-party query failures/noise.
+                if len(all_news) >= 6:
+                    logger.info("[大盘] 新闻已满足最小数量，跳过后续查询")
+                    break
                 response = self.search_service.search_stock_news(
                     stock_code="market",
                     stock_name=market_name,
@@ -270,12 +275,52 @@ class MarketAnalyzer:
                     all_news.extend(response.results)
                     logger.info(f"[大盘] 搜索 '{query}' 获取 {len(response.results)} 条结果")
             
+            if not all_news:
+                all_news = self._build_fallback_market_news(overview)
+                logger.info("[大盘] 外部新闻源无结果，启用结构化兜底新闻: %d 条", len(all_news))
+
             logger.info(f"[大盘] 共获取 {len(all_news)} 条市场新闻")
             
         except Exception as e:
             logger.error(f"[大盘] 搜索市场新闻失败: {e}")
         
         return all_news
+
+    def _build_fallback_market_news(self, overview: Optional[MarketOverview]) -> List[Dict[str, str]]:
+        """
+        Build deterministic fallback "news" entries from fetched market data.
+        This keeps the review prompt informative when third-party news providers fail.
+        """
+        date_label = datetime.now().strftime('%Y-%m-%d')
+        if overview is None:
+            return [
+                {
+                    "title": f"{date_label} 市场数据复盘（新闻源不可用）",
+                    "snippet": "外部新闻接口暂不可用，本次复盘将基于指数、成交与板块数据生成。",
+                }
+            ]
+
+        top_names = "、".join([s.get("name", "") for s in overview.top_sectors[:3] if s.get("name")]) or "暂无"
+        bottom_names = "、".join([s.get("name", "") for s in overview.bottom_sectors[:3] if s.get("name")]) or "暂无"
+        mood = f"上涨{overview.up_count}家，下跌{overview.down_count}家，成交额{overview.total_amount:.0f}亿"
+        index_snapshot = "；".join(
+            [f"{idx.name}{idx.change_pct:+.2f}%" for idx in overview.indices[:3] if idx.name]
+        ) or "主要指数数据暂缺"
+
+        return [
+            {
+                "title": f"{date_label} 市场宽度快照",
+                "snippet": mood,
+            },
+            {
+                "title": f"{date_label} 指数表现摘要",
+                "snippet": index_snapshot,
+            },
+            {
+                "title": f"{date_label} 板块轮动观察",
+                "snippet": f"领涨: {top_names}；领跌: {bottom_names}",
+            },
+        ]
     
     def generate_market_review(self, overview: MarketOverview, news: List) -> str:
         """
@@ -685,7 +730,7 @@ Output the report content directly, no extra commentary.
         overview = self.get_market_overview()
         
         # 2. 搜索市场新闻
-        news = self.search_market_news()
+        news = self.search_market_news(overview)
         
         # 3. 生成复盘报告
         report = self.generate_market_review(overview, news)

@@ -255,6 +255,9 @@ python main.py
 
 > 📖 完整环境变量、定时任务配置请参考 [完整配置指南](docs/full-guide.md)
 
+本地代理默认关闭。主程序只在 `USE_PROXY=true` 时使用 `PROXY_HOST` / `PROXY_PORT` 配置代理；`USE_PROXY=false`
+时会忽略当前 shell 继承的 `HTTP_PROXY` / `HTTPS_PROXY`，避免不可用的本地代理影响行情数据获取。
+
 
 ## 🖥️ Web 界面
 

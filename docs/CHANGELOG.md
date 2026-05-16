@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 📊 **LLM cost tracking** — all LLM calls (analysis, agent, market review) are recorded in the `llm_usage` table; new `GET /api/v1/usage/summary?period=today|month|all` endpoint returns aggregated token usage broken down by call type and model
 
 ### Fixed
+- **CLI one-shot runs** — explicit commands such as `python main.py --stocks ... --dry-run` now ignore background `SCHEDULE_ENABLED` / `WEBUI_ENABLED` defaults, preventing accidental FastAPI startup, scheduler loops, and unrelated market-review logs during one-off analysis.
+- **Offline/local run log noise** — main startup defaults LiteLLM to its bundled model-cost map, yfinance cache files are stored under `data/yfinance_cache`, yfinance internal logs are reduced to project-level summaries, and `USE_PROXY=false` clears inherited proxy values so stale local proxies do not break data fetches.
+- **Dry-run side effects** — `--dry-run` no longer triggers automatic backtesting after data-fetch verification.
+- **Optional data-source logging** — missing `TUSHARE_TOKEN` is now logged as informational fallback state instead of a warning.
 - **DeepSeek Chat LiteLLM call** — stop sending opt-in thinking payloads for `deepseek-chat` by default, avoiding LiteLLM/DeepSeek beta endpoint encoding failures (`ascii codec can't encode characters`) while keeping native thinking models (`deepseek-reasoner`, `deepseek-r1`, `qwq`) auto-detected.
 - 🐛 **历史报告狙击点位显示原始文本** (#452) — 历史详情页现优先展示 `raw_result.dashboard.battle_plan.sniper_points` 中的原始字符串，避免 `analysis_history` 数值列把区间、说明文字或复杂点位压缩成单个数字；保留原有数值列作为回退
 

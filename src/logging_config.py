@@ -39,13 +39,19 @@ class RelativePathFormatter(logging.Formatter):
         return super().format(record)
 
 
-
 # 默认需要降低日志级别的第三方库
 DEFAULT_QUIET_LOGGERS = [
-    'urllib3',
-    'sqlalchemy',
-    'google',
-    'httpx',
+    "urllib3",
+    "sqlalchemy",
+    "google",
+    "httpx",
+    "httpcore",
+    "litellm",
+    "peewee",
+]
+
+DEFAULT_SILENT_LOGGERS = [
+    "yfinance",
 ]
 
 
@@ -133,6 +139,9 @@ def setup_logging(
 
     for logger_name in quiet_loggers:
         logging.getLogger(logger_name).setLevel(logging.WARNING)
+
+    for logger_name in DEFAULT_SILENT_LOGGERS:
+        logging.getLogger(logger_name).setLevel(logging.CRITICAL)
 
     # 输出初始化完成信息（使用相对路径）
     try:

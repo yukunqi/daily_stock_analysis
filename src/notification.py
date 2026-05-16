@@ -112,7 +112,11 @@ class NotificationService(
     注意：所有已配置的渠道都会收到推送
     """
     
-    def __init__(self, source_message: Optional[BotMessage] = None):
+    def __init__(
+        self,
+        source_message: Optional[BotMessage] = None,
+        suppress_missing_channel_warning: bool = False,
+    ):
         """
         初始化通知服务
         
@@ -152,6 +156,8 @@ class NotificationService(
             self._context_channels.append("钉钉会话")
 
         if not self._available_channels and not self._context_channels:
+            if suppress_missing_channel_warning:
+                return
             logger.warning("未配置有效的通知渠道，将不发送推送通知")
         else:
             channel_names = [ChannelDetector.get_channel_name(ch) for ch in self._available_channels]

@@ -117,9 +117,9 @@ class TushareFetcher(BaseFetcher):
         如果 Token 未配置，此数据源将不可用
         """
         config = get_config()
-        
+
         if not config.tushare_token:
-            logger.warning("Tushare Token 未配置，此数据源不可用")
+            logger.info("Tushare Token 未配置，此数据源不可用")
             return
         
         try:

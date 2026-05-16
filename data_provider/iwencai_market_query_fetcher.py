@@ -178,7 +178,9 @@ def iwencai_cli_query(
     try:
         payload = json.loads(raw_out)
     except json.JSONDecodeError:
-        logger.warning("[Iwencai] invalid JSON stdout for query=%s", query)
+        # CLI stdout can be polluted by transient upstream text; keep this as debug
+        # to avoid warning flood while upper layers handle fallback providers.
+        logger.debug("[Iwencai] invalid JSON stdout for query=%s", query)
         return None
 
     if proc.returncode != 0:

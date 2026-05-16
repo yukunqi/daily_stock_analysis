@@ -28,6 +28,14 @@ from src.schemas.report_schema import AnalysisReportSchema
 
 logger = logging.getLogger(__name__)
 
+# Keep LiteLLM internal debug traces out of runtime logs.
+litellm.set_verbose = False
+litellm.suppress_debug_info = True
+litellm.log_level = "WARNING"
+litellm.verbose_logger.setLevel(logging.WARNING)
+for _handler in list(litellm.verbose_logger.handlers):
+    _handler.setLevel(logging.WARNING)
+
 
 def check_content_integrity(result: "AnalysisResult") -> Tuple[bool, List[str]]:
     """

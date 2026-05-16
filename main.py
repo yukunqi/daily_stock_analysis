@@ -25,6 +25,9 @@ import os
 from src.config import setup_env
 setup_env()
 
+# Avoid an import-time network request from LiteLLM in offline or sandboxed runs.
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "true")
+
 # 代理配置 - 通过 USE_PROXY 环境变量控制，默认关闭
 # GitHub Actions 环境自动跳过代理配置
 if os.getenv("GITHUB_ACTIONS") != "true" and os.getenv("USE_PROXY", "false").lower() == "true":
@@ -34,8 +37,14 @@ if os.getenv("GITHUB_ACTIONS") != "true" and os.getenv("USE_PROXY", "false").low
     proxy_url = f"http://{proxy_host}:{proxy_port}"
     os.environ["http_proxy"] = proxy_url
     os.environ["https_proxy"] = proxy_url
+    os.environ["HTTP_PROXY"] = proxy_url
+    os.environ["HTTPS_PROXY"] = proxy_url
+else:
+    for proxy_var in ("http_proxy", "https_proxy", "all_proxy", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
+        os.environ.pop(proxy_var, None)
 
 import argparse
+import asyncio
 import logging
 import sys
 import time
@@ -307,7 +316,9 @@ def run_full_analysis(
             max_workers=args.workers,
             query_id=query_id,
             query_source="cli",
-            save_context_snapshot=save_context_snapshot
+            save_context_snapshot=save_context_snapshot,
+            enable_ai_analysis=not args.dry_run,
+            enable_notifications=not args.no_notify,
         )
 
         # 1. 运行个股分析
@@ -380,47 +391,48 @@ def run_full_analysis(
         logger.info("\n任务执行完成")
 
         # === 新增：生成飞书云文档 ===
-        try:
-            from src.feishu_doc import FeishuDocManager
+        if not getattr(args, "dry_run", False):
+            try:
+                from src.feishu_doc import FeishuDocManager
 
-            feishu_doc = FeishuDocManager()
-            if feishu_doc.is_configured() and (results or market_report):
-                logger.info("正在创建飞书云文档...")
+                feishu_doc = FeishuDocManager()
+                if feishu_doc.is_configured() and (results or market_report):
+                    logger.info("正在创建飞书云文档...")
 
-                # 1. 准备标题 "01-01 13:01大盘复盘"
-                tz_cn = timezone(timedelta(hours=8))
-                now = datetime.now(tz_cn)
-                doc_title = f"{now.strftime('%Y-%m-%d %H:%M')} 大盘复盘"
+                    # 1. 准备标题 "01-01 13:01大盘复盘"
+                    tz_cn = timezone(timedelta(hours=8))
+                    now = datetime.now(tz_cn)
+                    doc_title = f"{now.strftime('%Y-%m-%d %H:%M')} 大盘复盘"
 
-                # 2. 准备内容 (拼接个股分析和大盘复盘)
-                full_content = ""
+                    # 2. 准备内容 (拼接个股分析和大盘复盘)
+                    full_content = ""
 
-                # 添加大盘复盘内容（如果有）
-                if market_report:
-                    full_content += f"# 📈 大盘复盘\n\n{market_report}\n\n---\n\n"
+                    # 添加大盘复盘内容（如果有）
+                    if market_report:
+                        full_content += f"# 📈 大盘复盘\n\n{market_report}\n\n---\n\n"
 
-                # 添加个股决策仪表盘（使用 NotificationService 生成，按 report_type 分支）
-                if results:
-                    dashboard_content = pipeline.notifier.generate_aggregate_report(
-                        results,
-                        getattr(config, 'report_type', 'simple'),
-                    )
-                    full_content += f"# 🚀 个股决策仪表盘\n\n{dashboard_content}"
+                    # 添加个股决策仪表盘（使用 NotificationService 生成，按 report_type 分支）
+                    if results:
+                        dashboard_content = pipeline.notifier.generate_aggregate_report(
+                            results,
+                            getattr(config, 'report_type', 'simple'),
+                        )
+                        full_content += f"# 🚀 个股决策仪表盘\n\n{dashboard_content}"
 
-                # 3. 创建文档
-                doc_url = feishu_doc.create_daily_doc(doc_title, full_content)
-                if doc_url:
-                    logger.info(f"飞书云文档创建成功: {doc_url}")
-                    # 可选：将文档链接也推送到群里
-                    if not args.no_notify:
-                        pipeline.notifier.send(f"[{now.strftime('%Y-%m-%d %H:%M')}] 复盘文档创建成功: {doc_url}")
+                    # 3. 创建文档
+                    doc_url = feishu_doc.create_daily_doc(doc_title, full_content)
+                    if doc_url:
+                        logger.info(f"飞书云文档创建成功: {doc_url}")
+                        # 可选：将文档链接也推送到群里
+                        if not args.no_notify:
+                            pipeline.notifier.send(f"[{now.strftime('%Y-%m-%d %H:%M')}] 复盘文档创建成功: {doc_url}")
 
-        except Exception as e:
-            logger.error(f"飞书文档生成失败: {e}")
+            except Exception as e:
+                logger.error(f"飞书文档生成失败: {e}")
 
         # === Auto backtest ===
         try:
-            if getattr(config, 'backtest_enabled', False):
+            if getattr(config, 'backtest_enabled', False) and not getattr(args, "dry_run", False):
                 from src.services.backtest_service import BacktestService
 
                 logger.info("开始自动回测...")
@@ -445,7 +457,7 @@ def run_full_analysis(
 def start_api_server(host: str, port: int, config: Config) -> None:
     """
     在后台线程启动 FastAPI 服务
-    
+
     Args:
         host: 监听地址
         port: 监听端口
@@ -473,6 +485,35 @@ def _is_truthy_env(var_name: str, default: str = "true") -> bool:
     """Parse common truthy / falsy environment values."""
     value = os.getenv(var_name, default).strip().lower()
     return value not in {"0", "false", "no", "off"}
+
+
+def _is_explicit_one_shot_run(args: argparse.Namespace) -> bool:
+    """Return True when CLI flags explicitly request a single analysis run."""
+    long_running_or_special_mode = (
+        getattr(args, "schedule", False)
+        or getattr(args, "serve", False)
+        or getattr(args, "serve_only", False)
+        or getattr(args, "webui", False)
+        or getattr(args, "webui_only", False)
+        or getattr(args, "market_review", False)
+        or getattr(args, "backtest", False)
+    )
+    if long_running_or_special_mode:
+        return False
+
+    return any(
+        (
+            bool(getattr(args, "stocks", None)),
+            getattr(args, "dry_run", False),
+            getattr(args, "no_notify", False),
+            getattr(args, "single_notify", False),
+            getattr(args, "workers", None) is not None,
+            getattr(args, "no_market_review", False),
+            getattr(args, "force_run", False),
+            getattr(args, "no_context_snapshot", False),
+        )
+    )
+
 
 def start_bot_stream_clients(config: Config) -> None:
     """Start bot stream clients when enabled in config."""
@@ -529,9 +570,17 @@ def main() -> int:
     logger.info("=" * 60)
 
     # 验证配置
-    warnings = config.validate()
-    for warning in warnings:
-        logger.warning(warning)
+    for issue in config.validate_structured():
+        if args.dry_run and issue.field == "LITELLM_CONFIG":
+            continue
+        if args.no_notify and issue.field == "WECHAT_WEBHOOK_URL":
+            continue
+        log_method = {
+            "error": logger.warning,
+            "warning": logger.warning,
+            "info": logger.info,
+        }.get(issue.severity, logger.warning)
+        log_method(issue.message)
 
     # 解析股票列表（统一为大写 Issue #355）
     stock_codes = None
@@ -545,8 +594,10 @@ def main() -> int:
     if args.webui_only:
         args.serve_only = True
 
+    explicit_one_shot_run = _is_explicit_one_shot_run(args)
+
     # 兼容旧版 WEBUI_ENABLED 环境变量
-    if config.webui_enabled and not (args.serve or args.serve_only):
+    if config.webui_enabled and not explicit_one_shot_run and not (args.serve or args.serve_only):
         args.serve = True
 
     # === 启动 Web 服务 (如果启用) ===
@@ -669,9 +720,9 @@ def main() -> int:
             return 0
 
         # 模式2: 定时任务模式
-        if args.schedule or config.schedule_enabled:
+        if args.schedule or (config.schedule_enabled and not explicit_one_shot_run):
             logger.info("模式: 定时任务")
-            
+
             # Determine whether to run immediately:
             # Command line arg --no-run-immediately overrides config if present.
             # Otherwise use config (defaults to True).
@@ -714,18 +765,18 @@ def main() -> int:
                         # Initialize required services
                         notifier = NotificationService()
                         search_service = SearchService()
-                        
+
                         # Initialize analyzer if API keys are available
                         analyzer = None
                         if config.litellm_model or config.gemini_api_keys or config.openai_api_keys:
                             try:
-                                analyzer = GeminiAnalyzer(
-                                    search_service=search_service,
-                                    provider_priority=config.vision_provider_priority.split(','),
-                                )
+                                analyzer = GeminiAnalyzer()
+                                if not analyzer.is_available():
+                                    logger.warning("AI 分析器初始化后不可用，改用模板生成大盘复盘")
+                                    analyzer = None
                             except Exception as e:
                                 logger.warning(f"Analyzer initialization failed: {e}")
-                        
+
                         # Check trading day
                         effective_region = None
                         if not getattr(args, 'force_run', False) and getattr(config, 'trading_day_check_enabled', True):
@@ -737,7 +788,7 @@ def main() -> int:
                             if effective_region == '':
                                 logger.info("今日非交易日，跳过大盘复盘")
                                 return
-                        
+
                         run_market_review(
                             notifier=notifier,
                             analyzer=analyzer,
@@ -785,7 +836,7 @@ def main() -> int:
         logger.info("\n程序执行完成")
 
         # 如果启用了服务且是非定时任务模式，保持程序运行
-        keep_running = start_serve and not (args.schedule or config.schedule_enabled)
+        keep_running = start_serve and not (args.schedule or (config.schedule_enabled and not explicit_one_shot_run))
         if keep_running:
             logger.info("API 服务运行中 (按 Ctrl+C 退出)...")
             try:
@@ -805,5 +856,20 @@ def main() -> int:
         return 1
 
 
+def _close_default_event_loop() -> None:
+    """Best-effort cleanup for libraries that leave a default loop unclosed."""
+    try:
+        loop = asyncio.get_event_loop()
+    except Exception:
+        return
+    try:
+        if not loop.is_closed():
+            loop.close()
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    exit_code = main()
+    _close_default_event_loop()
+    sys.exit(exit_code)
