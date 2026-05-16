@@ -48,7 +48,7 @@
 | 类型 | 支持 |
 |------|------|
 | AI 模型 | [AIHubMix](https://aihubmix.com/?aff=CfMq)、Gemini、OpenAI 兼容、DeepSeek、通义千问、Claude 等（统一通过 [LiteLLM](https://github.com/BerriAI/litellm) 调用，支持多 Key 负载均衡）|
-| 行情数据 | 同花顺问财 SkillHub CLI、AkShare、Tushare、Pytdx、Baostock、YFinance |
+| 行情数据 | Baostock、Pytdx、AkShare、Tushare、Efinance、同花顺问财 SkillHub CLI、YFinance（多源自动降级） |
 | 新闻搜索 | 同花顺问财结构化情报、Tavily、SerpAPI、Bocha、Brave、MiniMax |
 
 > 注：美股历史数据与实时行情统一使用 YFinance，确保复权一致性

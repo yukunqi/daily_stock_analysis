@@ -93,6 +93,12 @@ def _get_by_suffix(row: Dict[str, Any], prefix: str, date_suffix: Optional[str])
         key = f"{prefix}[{date_suffix}]"
         if key in row:
             return row[key]
+        # e.g. 开盘价_前复权[20260511] when prefix is 开盘价
+        bracket = f"[{date_suffix}]"
+        for k, v in row.items():
+            if isinstance(k, str) and k.endswith(bracket) and k.startswith(prefix):
+                return v
+        return None
     for k, v in row.items():
         if isinstance(k, str) and k.startswith(prefix) and "[" in k:
             return v
@@ -121,11 +127,49 @@ def _first_row(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return datas[0]
 
 
+_QUOTA_HINTS = ("次数已用完", "额度", "升级权益", "quota", "rate limit", "Rate limit")
+
+
+def _parse_cli_stdout(raw_out: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """
+    Parse hithink-market-query CLI stdout.
+
+    Returns (payload, plain_text_error). Gateway quota / text errors are not JSON.
+    """
+    raw = (raw_out or "").strip()
+    if not raw:
+        return None, "empty CLI stdout"
+
+    for candidate in (raw,):
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return parsed, None
+        except json.JSONDecodeError:
+            pass
+
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            parsed = json.loads(raw[start : end + 1])
+            if isinstance(parsed, dict):
+                return parsed, None
+        except json.JSONDecodeError:
+            pass
+
+    lower = raw.lower()
+    if any(hint in raw or hint.lower() in lower for hint in _QUOTA_HINTS):
+        return None, f"Iwencai API quota or rate limit: {raw[:240]}"
+    return None, f"non-JSON CLI stdout: {raw[:240]}"
+
+
 def iwencai_cli_query(
     query: str,
     *,
     limit: int = 8,
     timeout: Optional[int] = None,
+    call_type: str = "normal",
 ) -> Optional[Dict[str, Any]]:
     """Run the SkillHub CLI and return parsed JSON payload."""
     from src.config import get_config
@@ -152,6 +196,8 @@ def iwencai_cli_query(
         str(limit),
         "--timeout",
         str(effective_timeout),
+        "--call-type",
+        call_type if call_type in ("normal", "retry") else "normal",
     ]
     try:
         proc = subprocess.run(
@@ -175,22 +221,18 @@ def iwencai_cli_query(
         logger.warning("[Iwencai] empty stdout exit=%s query=%s stderr_tail=%r", proc.returncode, query, err_tail)
         return None
 
-    try:
-        payload = json.loads(raw_out)
-    except json.JSONDecodeError:
-        # CLI stdout can be polluted by transient upstream text; keep this as debug
-        # to avoid warning flood while upper layers handle fallback providers.
-        logger.debug("[Iwencai] invalid JSON stdout for query=%s", query)
+    payload, plain_err = _parse_cli_stdout(raw_out)
+    if payload is None:
+        logger.warning("[Iwencai] %s (exit=%s) query=%s", plain_err, proc.returncode, query)
         return None
 
-    if proc.returncode != 0:
+    if proc.returncode != 0 and not payload.get("success"):
         logger.warning(
             "[Iwencai] CLI exit %s for query=%s keys=%s",
             proc.returncode,
             query,
-            list(payload.keys()) if isinstance(payload, dict) else type(payload),
+            list(payload.keys()),
         )
-        return None
     return payload
 
 
@@ -293,7 +335,8 @@ class IwencaiMarketQueryFetcher(BaseFetcher):
     """
 
     name = "IwencaiMarketQueryFetcher"
-    priority = int(os.getenv("IWENCAI_MARKET_QUERY_PRIORITY", "-1"))
+    # Daily K-line: after Baostock/Pytdx/Akshare; realtime still via REALTIME_SOURCE_PRIORITY.
+    priority = int(os.getenv("IWENCAI_MARKET_QUERY_PRIORITY", "4"))
 
     def __init__(self) -> None:
         from src.config import get_config
@@ -304,24 +347,17 @@ class IwencaiMarketQueryFetcher(BaseFetcher):
         self._query_template = cfg.iwencai_market_query_template
         self._timeout = max(5, int(cfg.iwencai_subprocess_timeout_sec))
 
-    def _fetch_raw_data(self, stock_code: str, start_date: str, end_date: str) -> pd.DataFrame:
-        stock_code = normalize_stock_code(stock_code)
-        if is_us_stock_code(stock_code) or _iwencai_is_hk_code(stock_code):
-            raise DataFetchError("Iwencai only handles A-share daily K-line data")
+    def _daily_kline_queries(self, stock_code: str, query_days: int) -> List[str]:
+        """Natural-language queries for multi-day OHLCV (ordered from specific to broad)."""
+        n = query_days
+        code = stock_code
+        return [
+            f"{code}近{n}日开盘价最高价最低价收盘价成交量成交额涨跌幅",
+            f"{code}近{n}日开盘价最高价最低价收盘价成交量涨跌幅",
+            f"{code}日线开盘价收盘价最高价最低价成交量",
+        ]
 
-        try:
-            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-            query_days = max(30, min(260, (end_dt - start_dt).days + 1))
-        except Exception:
-            query_days = 60
-
-        query = f"{stock_code}近{query_days}日开盘价最高价最低价收盘价成交量成交额涨跌幅"
-        payload = iwencai_cli_query(query, limit=5, timeout=self._timeout)
-        row = self._pick_stock_row(payload, stock_code)
-        if row is None:
-            raise DataFetchError(f"Iwencai returned no K-line rows for {stock_code}")
-
+    def _rows_from_iwencai_kline(self, row: Dict[str, Any]) -> List[Dict[str, Any]]:
         dates = sorted(
             {
                 _DATE_SUFFIX_RE.search(k).group(1)
@@ -347,12 +383,53 @@ class IwencaiMarketQueryFetcher(BaseFetcher):
                     "pct_chg": safe_float(_get_by_suffix(row, "涨跌幅", d)),
                 }
             )
+        return records
 
-        if not records:
-            raise DataFetchError(f"Iwencai K-line fields missing for {stock_code}")
+    def _fetch_raw_data(self, stock_code: str, start_date: str, end_date: str) -> pd.DataFrame:
+        stock_code = normalize_stock_code(stock_code)
+        if is_us_stock_code(stock_code) or _iwencai_is_hk_code(stock_code):
+            raise DataFetchError("Iwencai only handles A-share daily K-line data")
 
-        logger.info("[Iwencai] daily K-line OK for %s rows=%s", stock_code, len(records))
-        return pd.DataFrame(records)
+        try:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+            query_days = max(30, min(260, (end_dt - start_dt).days + 1))
+        except Exception:
+            query_days = 60
+
+        last_reason = "Iwencai returned no K-line rows"
+        for attempt, query in enumerate(self._daily_kline_queries(stock_code, query_days)):
+            call_type = "retry" if attempt else "normal"
+            payload = iwencai_cli_query(
+                query, limit=5, timeout=self._timeout, call_type=call_type
+            )
+            if not payload:
+                last_reason = "Iwencai CLI returned no payload (quota, network, or non-JSON response)"
+                continue
+            if not payload.get("success"):
+                last_reason = (
+                    str(payload.get("error") or payload.get("message") or payload.get("text_response") or payload)
+                )[:300]
+                continue
+
+            row = self._pick_stock_row(payload, stock_code)
+            if row is None:
+                last_reason = "Iwencai success but no matching stock row in datas"
+                continue
+
+            records = self._rows_from_iwencai_kline(row)
+            if records:
+                logger.info(
+                    "[Iwencai] daily K-line OK for %s rows=%s query=%s",
+                    stock_code,
+                    len(records),
+                    query,
+                )
+                return pd.DataFrame(records)
+
+            last_reason = "Iwencai K-line fields missing (no dated close/volume columns)"
+
+        raise DataFetchError(f"{last_reason} for {stock_code}")
 
     def _normalize_data(self, df: pd.DataFrame, stock_code: str) -> pd.DataFrame:
         return df

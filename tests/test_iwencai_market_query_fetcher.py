@@ -10,7 +10,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from data_provider.iwencai_market_query_fetcher import parse_iwencai_cli_payload
+from data_provider.iwencai_market_query_fetcher import (
+    _get_by_suffix,
+    _parse_cli_stdout,
+    parse_iwencai_cli_payload,
+)
 from data_provider.realtime_types import RealtimeSource
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -63,6 +67,56 @@ FIXTURE_PAYLOAD = {
 }
 
 
+KLINE_FIXTURE = {
+    "success": True,
+    "datas": [
+        {
+            "股票代码": "600519.SH",
+            "股票简称": "贵州茅台",
+            "收盘价[20260514]": 1330.0,
+            "收盘价[20260513]": 1325.0,
+            "成交量[20260514]": 1000000.0,
+            "成交量[20260513]": 900000.0,
+            "开盘价[20260514]": 1335.0,
+            "最高价[20260514]": 1340.0,
+            "最低价[20260514]": 1328.0,
+            "开盘价_前复权[20260513]": 1320.0,
+            "最高价_前复权[20260513]": 1330.0,
+            "最低价_前复权[20260513]": 1318.0,
+            "成交额[20260514]": 1.5e9,
+            "涨跌幅[20260514]": -0.5,
+        }
+    ],
+}
+
+
+class TestParseCliStdout(unittest.TestCase):
+    def test_parses_indented_json(self):
+        payload, err = _parse_cli_stdout(json.dumps(FIXTURE_PAYLOAD, indent=2))
+        self.assertIsNone(err)
+        self.assertTrue(payload.get("success"))
+
+    def test_quota_plain_text(self):
+        text = "您今天的次数已用完，建议您升级权益获取更多额度。"
+        payload, err = _parse_cli_stdout(text)
+        self.assertIsNone(payload)
+        self.assertIn("quota", (err or "").lower())
+
+    def test_extracts_json_from_noisy_stdout(self):
+        wrapped = "notice\n" + json.dumps({"success": True, "datas": []}) + "\n"
+        payload, err = _parse_cli_stdout(wrapped)
+        self.assertIsNone(err)
+        self.assertTrue(payload.get("success"))
+
+
+class TestGetBySuffix(unittest.TestCase):
+    def test_does_not_cross_contaminate_dates(self):
+        row = KLINE_FIXTURE["datas"][0]
+        self.assertEqual(_get_by_suffix(row, "开盘价", "20260513"), 1320.0)
+        self.assertEqual(_get_by_suffix(row, "开盘价", "20260514"), 1335.0)
+        self.assertIsNone(_get_by_suffix(row, "成交额", "20260513"))
+
+
 class TestParseIwencaiCliPayload(unittest.TestCase):
     def test_maps_to_unified_quote(self):
         q = parse_iwencai_cli_payload(FIXTURE_PAYLOAD, "600519")
@@ -106,6 +160,29 @@ class TestParseIwencaiCliPayload(unittest.TestCase):
         self.assertAlmostEqual(q.price or 0, 99.5, places=2)
 
 
+@patch("data_provider.iwencai_market_query_fetcher.iwencai_cli_query")
+class TestIwencaiDailyKline(unittest.TestCase):
+    def test_fetch_raw_data_from_dated_columns(self, mock_query):
+        mock_query.return_value = KLINE_FIXTURE
+        from data_provider.iwencai_market_query_fetcher import IwencaiMarketQueryFetcher
+
+        f = IwencaiMarketQueryFetcher()
+        df = f._fetch_raw_data("600519", "2026-03-17", "2026-05-16")
+        self.assertEqual(len(df), 2)
+        row13 = df[df["date"] == "2026-05-13"].iloc[0]
+        self.assertEqual(row13["open"], 1320.0)
+        self.assertEqual(row13["close"], 1325.0)
+
+    def test_fetch_raw_data_tries_fallback_query(self, mock_query):
+        mock_query.side_effect = [None, KLINE_FIXTURE]
+        from data_provider.iwencai_market_query_fetcher import IwencaiMarketQueryFetcher
+
+        f = IwencaiMarketQueryFetcher()
+        df = f._fetch_raw_data("600519", "2026-03-17", "2026-05-16")
+        self.assertGreaterEqual(len(df), 1)
+        self.assertEqual(mock_query.call_count, 2)
+
+
 @patch("data_provider.iwencai_market_query_fetcher.subprocess.run")
 class TestIwencaiFetcherSubprocess(unittest.TestCase):
     def test_get_realtime_quote_parses_stdout(self, mock_run: MagicMock):
@@ -135,6 +212,30 @@ class TestIwencaiFetcherSubprocess(unittest.TestCase):
             assert q is not None
             self.assertEqual(q.code, "600519")
             mock_run.assert_called_once()
+        finally:
+            os.unlink(cli_path)
+
+    def test_cli_quota_text_returns_none(self, mock_run: MagicMock):
+        mock_proc = MagicMock()
+        mock_proc.returncode = 1
+        mock_proc.stdout = "您今天的次数已用完，建议您升级权益。"
+        mock_proc.stderr = ""
+        mock_run.return_value = mock_proc
+
+        fd, cli_path = tempfile.mkstemp(suffix="_cli.py", text=True)
+        os.write(fd, b"# placeholder\n")
+        os.close(fd)
+        try:
+            cfg = MagicMock()
+            cfg.iwencai_market_query_enabled = True
+            cfg.iwencai_cli_path = cli_path
+            cfg.iwencai_subprocess_timeout_sec = 30
+
+            with patch.dict(os.environ, {"IWENCAI_API_KEY": "test-key"}, clear=False):
+                with patch("src.config.get_config", return_value=cfg):
+                    from data_provider.iwencai_market_query_fetcher import iwencai_cli_query
+
+                    self.assertIsNone(iwencai_cli_query("600519最新价", limit=5))
         finally:
             os.unlink(cli_path)
 

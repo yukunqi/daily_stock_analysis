@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- **默认日线 K 线数据源优先级** — 未设置 `*_PRIORITY` 时改为 `Baostock(0) → Pytdx(1) → Akshare(2) → Efinance(3) → Iwencai(4) → Yfinance(5)`；配置 `TUSHARE_TOKEN` 时 Tushare 仍为 `-1` 最高。问财仅作补充，避免额度/东财风控拖慢首源；可用 `BAOSTOCK_PRIORITY` 等环境变量覆盖。
 - **默认实时行情优先级** — 未设置 `REALTIME_SOURCE_PRIORITY` 时默认改为 `iwencai_market,tencent,akshare_sina,efinance,akshare_em`（问财 CLI 优先；未启用问财或无 Key 时自动跳过）；仅配置 `TUSHARE_TOKEN` 且未显式设置该变量时，自动解析为 `iwencai_market,tushare,tencent,akshare_sina,efinance,akshare_em`
 
 ### Added

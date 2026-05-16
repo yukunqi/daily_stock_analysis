@@ -9,22 +9,18 @@
 2. 自动故障切换
 3. 防封禁流控策略
 
-数据源优先级（动态调整）：
+数据源优先级（动态调整，数字越小越优先）：
 【配置了 TUSHARE_TOKEN 时】
-1. TushareFetcher (Priority 0) - 🔥 最高优先级（动态提升）
-2. EfinanceFetcher (Priority 0) - 同优先级
-3. AkshareFetcher (Priority 1) - 来自 akshare 库
-4. PytdxFetcher (Priority 2) - 来自 pytdx 库（通达信）
-5. BaostockFetcher (Priority 3) - 来自 baostock 库
-6. YfinanceFetcher (Priority 4) - 来自 yfinance 库
+1. TushareFetcher (Priority -1) — 最高
+2. BaostockFetcher (0) → PytdxFetcher (1) → AkshareFetcher (2)
+3. EfinanceFetcher (3) → IwencaiMarketQueryFetcher (4, 启用时) → YfinanceFetcher (5)
 
 【未配置 TUSHARE_TOKEN 时】
-1. EfinanceFetcher (Priority 0) - 最高优先级，来自 efinance 库
-2. AkshareFetcher (Priority 1) - 来自 akshare 库
-3. PytdxFetcher (Priority 2) - 来自 pytdx 库（通达信）
-4. TushareFetcher (Priority 2) - 来自 tushare 库（不可用）
-5. BaostockFetcher (Priority 3) - 来自 baostock 库
-6. YfinanceFetcher (Priority 4) - 来自 yfinance 库
+1. BaostockFetcher (0) — 默认日线主源
+2. PytdxFetcher (1) → AkshareFetcher (2) → TushareFetcher (2, 不可用则跳过)
+3. EfinanceFetcher (3) → Iwencai (4) → Yfinance (5)
+
+实时行情顺序由 REALTIME_SOURCE_PRIORITY 单独控制（默认仍优先问财/腾讯等）。
 
 提示：优先级数字越小越优先，同优先级按初始化顺序排列
 

@@ -444,15 +444,16 @@ class DataFetcherManager:
         """
         初始化默认数据源列表
 
-        优先级动态调整逻辑：
-        - 如果配置了 TUSHARE_TOKEN：Tushare 优先级提升为 0（最高）
-        - 否则按默认优先级：
-          0. EfinanceFetcher (Priority 0) - 最高优先级
-          1. AkshareFetcher (Priority 1)
-          2. PytdxFetcher (Priority 2) - 通达信
-          2. TushareFetcher (Priority 2)
-          3. BaostockFetcher (Priority 3)
-          4. YfinanceFetcher (Priority 4)
+        优先级动态调整逻辑（数字越小越优先，失败自动切换下一源）：
+        - TUSHARE_TOKEN 可用：TushareFetcher → Priority -1
+        - 默认日线链路（未单独配置 *_PRIORITY 时）：
+          0. BaostockFetcher — 免费历史 K 线主源
+          1. PytdxFetcher — 通达信协议备用
+          2. AkshareFetcher — 多后端（含新浪兜底）
+          3. EfinanceFetcher — 东财
+          4. IwencaiMarketQueryFetcher — 问财（启用时；实时仍走 REALTIME_SOURCE_PRIORITY）
+          5. YfinanceFetcher — 美股/补充
+        - Tushare 无 Token 时保持 Priority 2，随链路降级尝试
         """
         from .efinance_fetcher import EfinanceFetcher
         from .akshare_fetcher import AkshareFetcher

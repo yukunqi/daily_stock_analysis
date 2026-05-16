@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 ===================================
-BaostockFetcher - 备用数据源 2 (Priority 3)
+BaostockFetcher - 默认历史 K 线主源 (Priority 0)
 ===================================
 
 数据来源：证券宝（Baostock）
@@ -51,7 +51,7 @@ class BaostockFetcher(BaseFetcher):
     """
     Baostock 数据源实现
     
-    优先级：3
+    优先级：0（默认日线主源，免费且较稳定）
     数据来源：证券宝 Baostock API
     
     关键策略：
@@ -66,7 +66,7 @@ class BaostockFetcher(BaseFetcher):
     """
     
     name = "BaostockFetcher"
-    priority = int(os.getenv("BAOSTOCK_PRIORITY", "3"))
+    priority = int(os.getenv("BAOSTOCK_PRIORITY", "0"))
     
     def __init__(self):
         """初始化 BaostockFetcher"""
