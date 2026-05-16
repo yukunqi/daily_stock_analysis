@@ -49,7 +49,7 @@
 |------|------|
 | AI 模型 | [AIHubMix](https://aihubmix.com/?aff=CfMq)、Gemini、OpenAI 兼容、DeepSeek、通义千问、Claude 等（统一通过 [LiteLLM](https://github.com/BerriAI/litellm) 调用，支持多 Key 负载均衡）|
 | 行情数据 | Baostock、Pytdx、AkShare、Tushare、Efinance、同花顺问财 SkillHub CLI、YFinance（多源自动降级） |
-| 新闻搜索 | 同花顺问财结构化情报、Tavily、SerpAPI、Bocha、Brave、MiniMax |
+| 新闻搜索 | 东方财富财经新闻、RSSHub 财经快讯流、同花顺问财结构化情报、Tavily、SerpAPI、Bocha、Brave、MiniMax |
 
 > 注：美股历史数据与实时行情统一使用 YFinance，确保复权一致性
 
@@ -147,6 +147,12 @@
 | `SERPAPI_API_KEYS` | [SerpAPI](https://serpapi.com/baidu-search-api?utm_source=github_daily_stock_analysis) 全渠道搜索 | 可选 |
 | `BOCHA_API_KEYS` | [博查搜索](https://open.bocha.cn/) Web Search API（中文搜索优化，支持AI摘要，多个key用逗号分隔） | 可选 |
 | `BRAVE_API_KEYS` | [Brave Search](https://brave.com/search/api/) API（隐私优先，美股优化，多个key用逗号分隔） | 可选 |
+| `EASTMONEY_NEWS_ENABLED` | 启用东方财富财经新闻语义搜索 provider，适合 A 股个股、产业链、宏观财经新闻检索 | 可选 |
+| `EASTMONEY_NEWS_API_KEY` | 东方财富财经新闻搜索 API Key（启用 `EASTMONEY_NEWS_ENABLED` 时必填） | 可选 |
+| `EASTMONEY_NEWS_INCLUDE_TYPES` / `EASTMONEY_NEWS_EXCLUDE_TYPES` | 东方财富新闻类型过滤；默认排除 `NOTICE,REPORT`，避免公告/研报污染新闻流 | 可选 |
+| `RSSHUB_FINANCE_ENABLED` | 启用自建 RSSHub 财经快讯流 provider，适合财联社电报、金十、汇通、证券时报等新闻流聚合 | 可选 |
+| `RSSHUB_BASE_URL` | 自建 RSSHub 实例地址，默认 `http://localhost:1200`；不建议生产依赖公共 `rsshub.app` | 可选 |
+| `RSSHUB_FINANCE_ROUTES` | RSSHub 财经路由，默认 `/cls/telegraph,/jin10/1,/fx678/kx,/stcn/yw,/caijing/roll` | 可选 |
 | `TUSHARE_TOKEN` | [Tushare Pro](https://tushare.pro/weborder/#/login?reg=834638 ) Token | 可选 |
 | `IWENCAI_API_KEY` | 同花顺问财 OpenAPI Key（[SkillHub](https://www.iwencai.com/skillhub) 安装 `hithink-market-query` 后获取） | 选用问财行情/情报源时必填 |
 | `IWENCAI_MARKET_QUERY_ENABLED` | 设为 `true` 时注册问财 Fetcher 和结构化情报 provider（需本仓库 `skills/hithink-market-query/scripts/cli.py`） | 可选 |

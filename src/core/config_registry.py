@@ -311,6 +311,104 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "validation": {"multi_value": True, "delimiter": ","},
         "display_order": 52,
     },
+    "EASTMONEY_NEWS_ENABLED": {
+        "title": "Eastmoney News Enabled",
+        "description": "Enable Eastmoney finance news semantic search provider.",
+        "category": "data_source",
+        "data_type": "boolean",
+        "ui_control": "switch",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "false",
+        "options": [],
+        "validation": {},
+        "display_order": 53,
+    },
+    "EASTMONEY_NEWS_API_KEY": {
+        "title": "Eastmoney News API Key",
+        "description": "API key for Eastmoney finance news search.",
+        "category": "data_source",
+        "data_type": "string",
+        "ui_control": "password",
+        "is_sensitive": True,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": None,
+        "options": [],
+        "validation": {},
+        "display_order": 54,
+    },
+    "EASTMONEY_NEWS_INCLUDE_TYPES": {
+        "title": "Eastmoney News Include Types",
+        "description": "Optional comma-separated Eastmoney information types to include, such as INV_NEWS,WECHAT.",
+        "category": "data_source",
+        "data_type": "string",
+        "ui_control": "text",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": None,
+        "options": [],
+        "validation": {"multi_value": True, "delimiter": ","},
+        "display_order": 54,
+    },
+    "EASTMONEY_NEWS_EXCLUDE_TYPES": {
+        "title": "Eastmoney News Exclude Types",
+        "description": "Comma-separated Eastmoney information types to exclude. Defaults to NOTICE,REPORT.",
+        "category": "data_source",
+        "data_type": "string",
+        "ui_control": "text",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "NOTICE,REPORT",
+        "options": [],
+        "validation": {"multi_value": True, "delimiter": ","},
+        "display_order": 54,
+    },
+    "RSSHUB_FINANCE_ENABLED": {
+        "title": "RSSHub Finance Enabled",
+        "description": "Enable self-hosted RSSHub finance feed search provider.",
+        "category": "data_source",
+        "data_type": "boolean",
+        "ui_control": "switch",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "false",
+        "options": [],
+        "validation": {},
+        "display_order": 55,
+    },
+    "RSSHUB_BASE_URL": {
+        "title": "RSSHub Base URL",
+        "description": "Base URL of your self-hosted RSSHub instance.",
+        "category": "data_source",
+        "data_type": "string",
+        "ui_control": "text",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "http://localhost:1200",
+        "options": [],
+        "validation": {},
+        "display_order": 56,
+    },
+    "RSSHUB_FINANCE_ROUTES": {
+        "title": "RSSHub Finance Routes",
+        "description": "Comma-separated RSSHub finance routes, such as /cls/telegraph,/jin10/1,/fx678/kx.",
+        "category": "data_source",
+        "data_type": "string",
+        "ui_control": "text",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "/cls/telegraph,/jin10/1,/fx678/kx,/stcn/yw,/caijing/roll",
+        "options": [],
+        "validation": {"multi_value": True, "delimiter": ","},
+        "display_order": 57,
+    },
     "ENABLE_REALTIME_QUOTE": {
         "title": "Enable Realtime Quote",
         "description": "Enable realtime market quotes. Disable to only use historical close prices.",
@@ -1483,39 +1581,63 @@ def _infer_category(key: str) -> str:
         return "backtest"
     if key.startswith(("GEMINI_", "OPENAI_", "ANTHROPIC_", "LITELLM_", "AIHUBMIX_", "DEEPSEEK_", "LLM_")):
         return "ai_model"
-    if key.endswith("_PRIORITY") or key.startswith(
-        (
-            "TUSHARE",
-            "AKSHARE",
-            "EFINANCE",
-            "PYTDX",
-            "BAOSTOCK",
-            "YFINANCE",
-            "TAVILY",
-            "SERPAPI",
-            "BRAVE",
-            "BOCHA",
-            "NEWS_",
-            "BIAS_",
+    if (
+        key.endswith("_PRIORITY")
+        or key.startswith(
+            (
+                "TUSHARE",
+                "AKSHARE",
+                "EFINANCE",
+                "PYTDX",
+                "BAOSTOCK",
+                "YFINANCE",
+                "TAVILY",
+                "SERPAPI",
+                "BRAVE",
+                "BOCHA",
+                "EASTMONEY_NEWS",
+                "RSSHUB",
+                "NEWS_",
+                "BIAS_",
+            )
         )
-    ) or key in ("ENABLE_REALTIME_QUOTE", "ENABLE_CHIP_DISTRIBUTION"):
+        or key in ("ENABLE_REALTIME_QUOTE", "ENABLE_CHIP_DISTRIBUTION")
+    ):
         return "data_source"
-    if key.startswith((
-        "WECHAT",
-        "FEISHU",
-        "TELEGRAM",
-        "EMAIL",
-        "PUSHOVER",
-        "PUSHPLUS",
-        "SERVERCHAN",
-        "DINGTALK",
-        "DISCORD",
-        "CUSTOM_WEBHOOK",
-        "WECOM",
-        "ASTRBOT",
-    )) or "WEBHOOK" in key:
+    if (
+        key.startswith(
+            (
+                "WECHAT",
+                "FEISHU",
+                "TELEGRAM",
+                "EMAIL",
+                "PUSHOVER",
+                "PUSHPLUS",
+                "SERVERCHAN",
+                "DINGTALK",
+                "DISCORD",
+                "CUSTOM_WEBHOOK",
+                "WECOM",
+                "ASTRBOT",
+            )
+        )
+        or "WEBHOOK" in key
+    ):
         return "notification"
-    if key.startswith(("LOG_", "SCHEDULE_", "WEBUI_", "HTTP_", "HTTPS_", "MAX_", "DEBUG", "MARKET_REVIEW_", "TRADING_DAY_", "ANALYSIS_DELAY")):
+    if key.startswith(
+        (
+            "LOG_",
+            "SCHEDULE_",
+            "WEBUI_",
+            "HTTP_",
+            "HTTPS_",
+            "MAX_",
+            "DEBUG",
+            "MARKET_REVIEW_",
+            "TRADING_DAY_",
+            "ANALYSIS_DELAY",
+        )
+    ):
         return "system"
     return "uncategorized"
 
