@@ -142,7 +142,12 @@
 | Secret 名称 | 说明 | 必填 |
 |------------|------|:----:|
 | `STOCK_LIST` | 自选股代码，如 `600519,hk00700,AAPL,TSLA` | ✅ |
-| `TAVILY_API_KEYS` | [Tavily](https://tavily.com/) 搜索 API（新闻搜索） | 推荐 |
+| `TREND_RADAR_NEWS_ENABLED` | 启用 TrendRadar 被动新闻流，读取本地 SQLite 新闻库注入个股分析与大盘复盘 | 可选 |
+| `TREND_RADAR_OUTPUT_DIR` | TrendRadar 输出目录，默认 `/Users/yukunqi_1/git_project/TrendRadar/output` | 可选 |
+| `TREND_RADAR_NEWS_DAYS` / `TREND_RADAR_NEWS_LIMIT` | 读取最近 N 天、最多 N 条 TrendRadar 新闻，默认 `1` / `100` | 可选 |
+| `TREND_RADAR_FETCH_CONTENT_ENABLED` / `TREND_RADAR_CONTENT_MAX_ITEMS` | 对命中的 TrendRadar URL 抓取正文摘录，默认开启、每只股票最多 3 篇 | 可选 |
+| `NEWS_CONTENT_CACHE_PATH` / `NEWS_CONTENT_FETCH_TIMEOUT` / `NEWS_CONTENT_MAX_CHARS` | 新闻正文缓存、抓取超时和单篇摘录长度，默认 `./data/news_content_cache.db` / `8` / `2500` | 可选 |
+| `TAVILY_API_KEYS` | [Tavily](https://tavily.com/) 搜索 API（主动搜索，可选；TrendRadar 新闻智能主线不依赖） | 可选 |
 | `MINIMAX_API_KEYS` | [MiniMax](https://platform.minimaxi.com/) Coding Plan Web Search（结构化搜索结果） | 可选 |
 | `SERPAPI_API_KEYS` | [SerpAPI](https://serpapi.com/baidu-search-api?utm_source=github_daily_stock_analysis) 全渠道搜索 | 可选 |
 | `BOCHA_API_KEYS` | [博查搜索](https://open.bocha.cn/) Web Search API（中文搜索优化，支持AI摘要，多个key用逗号分隔） | 可选 |
@@ -168,6 +173,8 @@
 | `AGENT_MAX_STEPS` | Agent 最大推理步数（默认 10） | 可选 |
 | `AGENT_STRATEGY_DIR` | 自定义策略目录（默认内置 `strategies/`） | 可选 |
 | `TRADING_DAY_CHECK_ENABLED` | 交易日检查（默认 `true`）：非交易日跳过执行；设为 `false` 或使用 `--force-run` 强制执行 | 可选 |
+
+TrendRadar 集成读取本地 `output/news/YYYY-MM-DD.db`，由 TrendRadar 负责采集、过滤和存储新闻，本项目只负责个股/宏观影响分析。命中个股的新闻若包含 URL，本项目会按配置抓取正文摘录并缓存；抓取失败时自动降级为标题、来源和链接。
 
 #### 3. 启用 Actions
 

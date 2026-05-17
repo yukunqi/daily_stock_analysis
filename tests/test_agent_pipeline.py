@@ -14,9 +14,7 @@ import unittest
 import sys
 import os
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
-from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -73,6 +71,34 @@ class TestAgentConfig(unittest.TestCase):
         Config._instance = None
         config = Config._load_from_env()
         self.assertEqual(config.agent_skills, [])
+
+    @patch.dict(os.environ, {
+        'TREND_RADAR_NEWS_ENABLED': 'true',
+        'TREND_RADAR_OUTPUT_DIR': '/tmp/trendradar-output',
+        'TREND_RADAR_NEWS_DAYS': '3',
+        'TREND_RADAR_NEWS_LIMIT': '50',
+        'TREND_RADAR_FETCH_CONTENT_ENABLED': 'true',
+        'TREND_RADAR_CONTENT_MAX_ITEMS': '2',
+        'NEWS_CONTENT_CACHE_PATH': '/tmp/news-content-cache.db',
+        'NEWS_CONTENT_FETCH_TIMEOUT': '4',
+        'NEWS_CONTENT_MAX_CHARS': '1200',
+        'NEWS_CONTENT_CACHE_TTL_HOURS': '12',
+    }, clear=True)
+    def test_trend_radar_config_from_env(self):
+        """TrendRadar passive news config should be loaded from environment."""
+        from src.config import Config
+        Config._instance = None
+        config = Config._load_from_env()
+        self.assertTrue(config.trend_radar_news_enabled)
+        self.assertEqual(config.trend_radar_output_dir, '/tmp/trendradar-output')
+        self.assertEqual(config.trend_radar_news_days, 3)
+        self.assertEqual(config.trend_radar_news_limit, 50)
+        self.assertTrue(config.trend_radar_fetch_content_enabled)
+        self.assertEqual(config.trend_radar_content_max_items, 2)
+        self.assertEqual(config.news_content_cache_path, '/tmp/news-content-cache.db')
+        self.assertEqual(config.news_content_fetch_timeout, 4)
+        self.assertEqual(config.news_content_max_chars, 1200)
+        self.assertEqual(config.news_content_cache_ttl_hours, 12)
 
     @patch.dict(os.environ, {'AGENT_SKILLS': '  dragon_head , shrink_pullback  '}, clear=True)
     def test_skills_whitespace_handling(self):
@@ -335,11 +361,11 @@ class TestPipelineRouting(unittest.TestCase):
     def test_legacy_mode_does_not_call_agent(self):
         """When agent_mode=False, analyze_stock should NOT call _analyze_with_agent."""
         with patch('src.core.pipeline.get_config') as mock_config, \
-             patch('src.core.pipeline.get_db') as mock_db, \
-             patch('src.core.pipeline.DataFetcherManager') as mock_fm, \
-             patch('src.core.pipeline.GeminiAnalyzer') as mock_analyzer, \
+             patch('src.core.pipeline.get_db'), \
+             patch('src.core.pipeline.DataFetcherManager'), \
+             patch('src.core.pipeline.GeminiAnalyzer'), \
              patch('src.core.pipeline.NotificationService'), \
-             patch('src.core.pipeline.SearchService') as mock_search:
+             patch('src.core.pipeline.SearchService'):
 
             mock_cfg = MagicMock()
             mock_cfg.max_workers = 2
@@ -371,18 +397,68 @@ class TestPipelineRouting(unittest.TestCase):
             # Mock analyzer
             pipeline.analyzer.analyze.return_value = None
 
-            result = pipeline.analyze_stock("600519", ReportType.SIMPLE, "q1")
+            pipeline.analyze_stock("600519", ReportType.SIMPLE, "q1")
 
             # _analyze_with_agent should NOT exist as a mock (it's the real method)
             # Instead, verify analyzer.analyze was called (legacy path)
             pipeline.analyzer.analyze.assert_called_once()
 
+    def test_legacy_mode_uses_trend_radar_context_without_active_search(self):
+        """Legacy stock analysis should use TrendRadar context and skip active news search."""
+        with patch('src.core.pipeline.get_config') as mock_config, \
+             patch('src.core.pipeline.get_db'), \
+             patch('src.core.pipeline.DataFetcherManager'), \
+             patch('src.core.pipeline.GeminiAnalyzer'), \
+             patch('src.core.pipeline.NotificationService'), \
+             patch('src.core.pipeline.SearchService'):
+
+            mock_cfg = MagicMock()
+            mock_cfg.max_workers = 2
+            mock_cfg.agent_mode = False
+            mock_cfg.agent_max_steps = 10
+            mock_cfg.agent_skills = []
+            mock_cfg.bocha_api_keys = []
+            mock_cfg.tavily_api_keys = []
+            mock_cfg.brave_api_keys = []
+            mock_cfg.serpapi_keys = []
+            mock_cfg.news_max_age_days = 7
+            mock_cfg.enable_realtime_quote = False
+            mock_cfg.enable_chip_distribution = False
+            mock_cfg.realtime_source_priority = []
+            mock_cfg.save_context_snapshot = False
+            mock_cfg.trend_radar_news_enabled = False
+            mock_config.return_value = mock_cfg
+
+            from src.core.pipeline import StockAnalysisPipeline
+            from src.enums import ReportType
+            pipeline = StockAnalysisPipeline(config=mock_cfg)
+            pipeline.fetcher_manager.get_stock_name.return_value = "贵州茅台"
+            pipeline.fetcher_manager.get_realtime_quote.return_value = None
+            pipeline.fetcher_manager.get_chip_distribution.return_value = None
+            pipeline.db.get_data_range.return_value = []
+            pipeline.db.get_analysis_context.return_value = None
+            pipeline.search_service.is_available = True
+            pipeline.trend_radar_news_service = MagicMock()
+            pipeline.trend_radar_news_service.build_stock_news_context.return_value = (
+                "【TrendRadar News Context | 贵州茅台(600519)】\n"
+                "1. [direct:茅台] 茅台再调价"
+            )
+            expected_result = MagicMock()
+            pipeline.analyzer.analyze.return_value = expected_result
+
+            result = pipeline.analyze_stock("600519", ReportType.SIMPLE, "q-trend")
+
+            self.assertEqual(result, expected_result)
+            pipeline.search_service.search_comprehensive_intel.assert_not_called()
+            _, kwargs = pipeline.analyzer.analyze.call_args
+            self.assertIn("TrendRadar News Context", kwargs["news_context"])
+
 
 class TestAnalyzeWithAgentStockName(unittest.TestCase):
     """Test stock-name handling in _analyze_with_agent."""
 
-    def test_analyze_with_agent_uses_resolved_name_for_news_persistence(self):
-        """Should use resolved stock name from dashboard for search and DB persistence."""
+    def test_analyze_with_agent_uses_resolved_name_without_active_news_search(self):
+        """Agent mode should keep resolved stock name and not call active news search."""
         with patch('src.core.pipeline.get_config') as mock_config, \
              patch('src.core.pipeline.get_db'), \
              patch('src.core.pipeline.DataFetcherManager'), \
@@ -405,6 +481,7 @@ class TestAnalyzeWithAgentStockName(unittest.TestCase):
             mock_cfg.enable_chip_distribution = True
             mock_cfg.realtime_source_priority = []
             mock_cfg.save_context_snapshot = False
+            mock_cfg.trend_radar_news_enabled = False
             mock_config.return_value = mock_cfg
 
             from src.core.pipeline import StockAnalysisPipeline
@@ -428,12 +505,7 @@ class TestAnalyzeWithAgentStockName(unittest.TestCase):
             mock_executor.run.return_value = agent_result
             mock_build_executor.return_value = mock_executor
 
-            news_response = MagicMock()
-            news_response.success = True
-            news_response.results = [{"title": "test"}]
-            news_response.query = "test query"
             pipeline.search_service.is_available = True
-            pipeline.search_service.search_stock_news.return_value = news_response
 
             result = pipeline._analyze_with_agent(
                 code="588200",
@@ -446,14 +518,8 @@ class TestAnalyzeWithAgentStockName(unittest.TestCase):
 
             self.assertIsNotNone(result)
             self.assertEqual(result.name, "科创芯片ETF")
-            pipeline.search_service.search_stock_news.assert_called_once_with(
-                stock_code="588200",
-                stock_name="科创芯片ETF",
-                max_results=5
-            )
-            pipeline.db.save_news_intel.assert_called_once()
-            saved_kwargs = pipeline.db.save_news_intel.call_args.kwargs
-            self.assertEqual(saved_kwargs["name"], "科创芯片ETF")
+            pipeline.search_service.search_stock_news.assert_not_called()
+            pipeline.db.save_news_intel.assert_not_called()
 
 
 # ============================================================

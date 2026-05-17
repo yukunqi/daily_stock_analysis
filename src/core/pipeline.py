@@ -26,9 +26,9 @@ from src.storage import get_db
 from data_provider import DataFetcherManager
 from data_provider.realtime_types import ChipDistribution
 from src.analyzer import GeminiAnalyzer, AnalysisResult
-from src.data.stock_mapping import STOCK_NAME_MAP
 from src.notification import NotificationService, NotificationChannel
 from src.search_service import SearchService
+from src.services.trend_radar_news_service import get_trend_radar_news_service
 from src.enums import ReportType
 from src.stock_analyzer import StockTrendAnalyzer, TrendAnalysisResult
 from src.core.trading_calendar import get_market_for_stock, is_market_open
@@ -85,6 +85,7 @@ class StockAnalysisPipeline:
             source_message=source_message,
             suppress_missing_channel_warning=not enable_notifications,
         )
+        self.trend_radar_news_service = get_trend_radar_news_service(self.config)
         
         # 初始化搜索服务
         self.search_service = SearchService(
@@ -111,6 +112,8 @@ class StockAnalysisPipeline:
             logger.info(f"搜索服务已启用 ({', '.join(self.search_service.provider_names)})")
         else:
             logger.warning("搜索服务未启用（未配置 API Key）")
+        if self.trend_radar_news_service:
+            logger.info("TrendRadar 本地新闻已启用: %s", self.config.trend_radar_output_dir)
     
     def fetch_and_save_stock_data(
         self, 
@@ -259,44 +262,8 @@ class StockAnalysisPipeline:
             except Exception as e:
                 logger.warning(f"{stock_name}({code}) 趋势分析失败: {e}", exc_info=True)
 
-            # Step 4: 多维度情报搜索（最新消息+风险排查+业绩预期）
-            news_context = None
-            if self.search_service.is_available:
-                logger.info(f"{stock_name}({code}) 开始多维度情报搜索...")
-
-                # 使用多维度搜索（最多5次搜索）
-                intel_results = self.search_service.search_comprehensive_intel(
-                    stock_code=code,
-                    stock_name=stock_name,
-                    max_searches=5
-                )
-
-                # 格式化情报报告
-                if intel_results:
-                    news_context = self.search_service.format_intel_report(intel_results, stock_name)
-                    total_results = sum(
-                        len(r.results) for r in intel_results.values() if r.success
-                    )
-                    logger.info(f"{stock_name}({code}) 情报搜索完成: 共 {total_results} 条结果")
-                    logger.debug(f"{stock_name}({code}) 情报搜索结果:\n{news_context}")
-
-                    # 保存新闻情报到数据库（用于后续复盘与查询）
-                    try:
-                        query_context = self._build_query_context(query_id=query_id)
-                        for dim_name, response in intel_results.items():
-                            if response and response.success and response.results:
-                                self.db.save_news_intel(
-                                    code=code,
-                                    name=stock_name,
-                                    dimension=dim_name,
-                                    query=response.query,
-                                    response=response,
-                                    query_context=query_context
-                                )
-                    except Exception as e:
-                        logger.warning(f"{stock_name}({code}) 保存新闻情报失败: {e}")
-            else:
-                logger.info(f"{stock_name}({code}) 搜索服务不可用，跳过情报搜索")
+            # Step 4: TrendRadar passive news context (no active news search)
+            news_context = self._build_trend_radar_stock_news_context(code, stock_name)
 
             # Step 5: 获取分析上下文（技术面数据）
             context = self.db.get_analysis_context(code)
@@ -356,6 +323,23 @@ class StockAnalysisPipeline:
         except Exception as e:
             logger.error(f"{stock_name}({code}) 分析失败: {e}")
             logger.exception(f"{stock_name}({code}) 详细错误信息:")
+            return None
+
+    def _build_trend_radar_stock_news_context(self, code: str, stock_name: str) -> Optional[str]:
+        """Build passive TrendRadar news context for one stock."""
+        if not self.trend_radar_news_service:
+            logger.info(f"{stock_name}({code}) TrendRadar 本地新闻未启用，跳过新闻上下文")
+            return None
+        try:
+            context = self.trend_radar_news_service.build_stock_news_context(code, stock_name)
+            if context:
+                logger.info(f"{stock_name}({code}) TrendRadar 新闻匹配成功")
+                logger.debug(f"{stock_name}({code}) TrendRadar 新闻上下文:\n{context}")
+                return context
+            logger.info(f"{stock_name}({code}) TrendRadar 未匹配到相关新闻")
+            return None
+        except Exception as e:
+            logger.warning(f"{stock_name}({code}) 读取 TrendRadar 新闻失败: {e}")
             return None
     
     def _enhance_context(
@@ -525,12 +509,16 @@ class StockAnalysisPipeline:
             # Build executor from shared factory (ToolRegistry and SkillManager prototype are cached)
             executor = build_agent_executor(self.config, getattr(self.config, 'agent_skills', None) or None)
 
+            news_context = self._build_trend_radar_stock_news_context(code, stock_name)
+
             # Build initial context to avoid redundant tool calls
             initial_context = {
                 "stock_code": code,
                 "stock_name": stock_name,
                 "report_type": report_type.value,
             }
+            if news_context:
+                initial_context["trend_radar_news_context"] = news_context
             
             if realtime_quote:
                 initial_context["realtime_quote"] = self._safe_to_dict(realtime_quote)
@@ -558,29 +546,6 @@ class StockAnalysisPipeline:
                     )
             resolved_stock_name = result.name if result and result.name else stock_name
 
-            # 保存新闻情报到数据库（Agent 工具结果仅用于 LLM 上下文，未持久化，Fixes #396）
-            # 使用 search_stock_news（与 Agent 工具调用逻辑一致），仅 1 次 API 调用，无额外延迟
-            if self.search_service.is_available:
-                try:
-                    news_response = self.search_service.search_stock_news(
-                        stock_code=code,
-                        stock_name=resolved_stock_name,
-                        max_results=5
-                    )
-                    if news_response.success and news_response.results:
-                        query_context = self._build_query_context(query_id=query_id)
-                        self.db.save_news_intel(
-                            code=code,
-                            name=resolved_stock_name,
-                            dimension="latest_news",
-                            query=news_response.query,
-                            response=news_response,
-                            query_context=query_context
-                        )
-                        logger.info(f"[{code}] Agent 模式: 新闻情报已保存 {len(news_response.results)} 条")
-                except Exception as e:
-                    logger.warning(f"[{code}] Agent 模式保存新闻情报失败: {e}")
-
             # 保存分析历史记录
             if result:
                 try:
@@ -589,7 +554,7 @@ class StockAnalysisPipeline:
                         result=result,
                         query_id=query_id,
                         report_type=report_type.value,
-                        news_content=None,
+                        news_content=news_context,
                         context_snapshot=initial_context,
                         save_snapshot=self.save_context_snapshot
                     )

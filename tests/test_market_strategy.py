@@ -2,6 +2,7 @@
 """Tests for market strategy blueprints."""
 
 import unittest
+from unittest.mock import MagicMock
 
 from src.core.market_strategy import get_market_strategy_blueprint
 from src.market_analyzer import MarketAnalyzer, MarketOverview
@@ -43,6 +44,30 @@ class TestMarketAnalyzerStrategyPrompt(unittest.TestCase):
 
         self.assertIn("Strategy Plan", prompt)
         self.assertIn("US Market Regime Strategy", prompt)
+
+    def test_market_news_uses_trend_radar_without_active_search(self):
+        analyzer = MarketAnalyzer.__new__(MarketAnalyzer)
+        analyzer.trend_radar_news_service = MagicMock()
+        analyzer.trend_radar_news_service.build_market_news_items.return_value = [
+            {"title": "全球通胀加剧债市风暴", "snippet": "buckets: macro, liquidity"}
+        ]
+        analyzer.search_service = MagicMock()
+
+        news = analyzer.search_market_news(MarketOverview(date="2026-05-16"))
+
+        self.assertEqual(len(news), 1)
+        self.assertIn("通胀", news[0]["title"])
+        analyzer.search_service.search_stock_news.assert_not_called()
+
+    def test_market_news_falls_back_to_structured_snapshot_without_active_search(self):
+        analyzer = MarketAnalyzer.__new__(MarketAnalyzer)
+        analyzer.trend_radar_news_service = None
+        analyzer.search_service = MagicMock()
+
+        news = analyzer.search_market_news(MarketOverview(date="2026-05-16"))
+
+        self.assertGreaterEqual(len(news), 1)
+        analyzer.search_service.search_stock_news.assert_not_called()
 
 
 if __name__ == "__main__":

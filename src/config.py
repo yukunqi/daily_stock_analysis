@@ -179,6 +179,16 @@ class Config:
     # === 新闻与分析筛选配置 ===
     news_max_age_days: int = 3  # 新闻最大时效（天）
     bias_threshold: float = 5.0  # 乖离率阈值（%），超过此值提示不追高
+    trend_radar_news_enabled: bool = False  # Read passive news from local TrendRadar output
+    trend_radar_output_dir: str = "/Users/yukunqi_1/git_project/TrendRadar/output"
+    trend_radar_news_days: int = 1
+    trend_radar_news_limit: int = 100
+    trend_radar_fetch_content_enabled: bool = True
+    trend_radar_content_max_items: int = 3
+    news_content_cache_path: str = "./data/news_content_cache.db"
+    news_content_fetch_timeout: int = 8
+    news_content_max_chars: int = 2500
+    news_content_cache_ttl_hours: int = 168
 
     # === Agent 模式配置 ===
     agent_mode: bool = False
@@ -658,6 +668,19 @@ class Config:
             rsshub_finance_routes=os.getenv("RSSHUB_FINANCE_ROUTES", ""),
             news_max_age_days=max(1, int(os.getenv("NEWS_MAX_AGE_DAYS", "3"))),
             bias_threshold=max(1.0, float(os.getenv("BIAS_THRESHOLD", "5.0"))),
+            trend_radar_news_enabled=os.getenv("TREND_RADAR_NEWS_ENABLED", "false").lower() == "true",
+            trend_radar_output_dir=os.getenv(
+                "TREND_RADAR_OUTPUT_DIR",
+                "/Users/yukunqi_1/git_project/TrendRadar/output",
+            ),
+            trend_radar_news_days=max(1, int(os.getenv("TREND_RADAR_NEWS_DAYS", "1"))),
+            trend_radar_news_limit=max(1, int(os.getenv("TREND_RADAR_NEWS_LIMIT", "100"))),
+            trend_radar_fetch_content_enabled=os.getenv("TREND_RADAR_FETCH_CONTENT_ENABLED", "true").lower() == "true",
+            trend_radar_content_max_items=max(0, int(os.getenv("TREND_RADAR_CONTENT_MAX_ITEMS", "3"))),
+            news_content_cache_path=os.getenv("NEWS_CONTENT_CACHE_PATH", "./data/news_content_cache.db"),
+            news_content_fetch_timeout=max(1, int(os.getenv("NEWS_CONTENT_FETCH_TIMEOUT", "8"))),
+            news_content_max_chars=max(200, int(os.getenv("NEWS_CONTENT_MAX_CHARS", "2500"))),
+            news_content_cache_ttl_hours=max(1, int(os.getenv("NEWS_CONTENT_CACHE_TTL_HOURS", "168"))),
             agent_mode=os.getenv("AGENT_MODE", "false").lower() == "true",
             agent_max_steps=int(os.getenv("AGENT_MAX_STEPS", "10")),
             agent_skills=[s.strip() for s in os.getenv("AGENT_SKILLS", "").split(",") if s.strip()],
@@ -1181,9 +1204,10 @@ class Config:
                 )
             )
 
-        # --- Search engine (informational only) ---
+        # --- Passive/active news sources (informational only) ---
         if not (
-            self.bocha_api_keys
+            self.trend_radar_news_enabled
+            or self.bocha_api_keys
             or self.minimax_api_keys
             or self.tavily_api_keys
             or self.brave_api_keys
@@ -1196,11 +1220,11 @@ class Config:
                 ConfigIssue(
                     severity="info",
                     message=(
-                        "未配置搜索引擎/情报 API Key 或免费财经源 "
+                        "未启用 TrendRadar 被动新闻，且未配置主动搜索/情报 API Key "
                         "(Bocha/MiniMax/Tavily/Brave/SerpAPI/IWENCAI/Eastmoney/RSSHub)，"
-                        "新闻搜索功能将不可用"
+                        "新闻上下文将不可用"
                     ),
-                    field="BOCHA_API_KEY",
+                    field="TREND_RADAR_NEWS_ENABLED",
                 )
             )
 
@@ -1214,6 +1238,17 @@ class Config:
                     field="EASTMONEY_NEWS_API_KEY",
                 )
             )
+
+        if self.trend_radar_news_enabled:
+            trend_output = Path(self.trend_radar_output_dir).expanduser()
+            if not trend_output.exists():
+                issues.append(
+                    ConfigIssue(
+                        severity="warning",
+                        message=f"TREND_RADAR_NEWS_ENABLED=true 但输出目录不存在: {trend_output}",
+                        field="TREND_RADAR_OUTPUT_DIR",
+                    )
+                )
 
         # --- Notification channels ---
         has_notification = bool(

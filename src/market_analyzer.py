@@ -11,18 +11,16 @@
 """
 
 import logging
-import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-
-import pandas as pd
 
 from data_provider.base import DataFetcherManager
 from src.config import get_config
 from src.core.market_profile import MarketProfile, get_profile
 from src.core.market_strategy import get_market_strategy_blueprint
 from src.search_service import SearchService
+from src.services.trend_radar_news_service import get_trend_radar_news_service
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +106,7 @@ class MarketAnalyzer:
         self.config = get_config()
         self.search_service = search_service
         self.analyzer = analyzer
+        self.trend_radar_news_service = get_trend_radar_news_service(self.config)
         self.data_manager = DataFetcherManager()
         self.region = region if region in ("cn", "us") else "cn"
         self.profile: MarketProfile = get_profile(self.region)
@@ -246,53 +245,21 @@ class MarketAnalyzer:
         Returns:
             新闻列表
         """
-        if not self.search_service:
-            logger.warning("[大盘] 搜索服务未配置，跳过新闻搜索")
-            return []
-
-        all_news = []
-        today = datetime.now()
-        date_str = today.strftime("%Y年%m月%d日")
-
-        # 按 region 使用不同的新闻搜索词
-        search_queries = self.profile.news_queries
-
         try:
-            logger.info("[大盘] 开始搜索市场新闻...")
-
-            # 根据 region 设置搜索上下文名称，避免美股搜索被解读为 A 股语境
-            market_name = "大盘" if self.region == "cn" else "US market"
-            seen_news = set()
-            for query in search_queries:
-                # We only need a compact set of market headlines for the review.
-                # Stop early to reduce flaky third-party query failures/noise.
-                if len(all_news) >= 6:
-                    logger.info("[大盘] 新闻已满足最小数量，跳过后续查询")
-                    break
-                response = self.search_service.search_stock_news(
-                    stock_code="market", stock_name=market_name, max_results=3, focus_keywords=query.split()
-                )
-                if response and response.results:
-                    added = 0
-                    for item in response.results:
-                        key = getattr(item, "url", "") or getattr(item, "title", "")
-                        if key in seen_news:
-                            continue
-                        seen_news.add(key)
-                        all_news.append(item)
-                        added += 1
-                    logger.info(f"[大盘] 搜索 '{query}' 获取 {len(response.results)} 条结果，新增 {added} 条")
-
-            if not all_news:
-                all_news = self._build_fallback_market_news(overview)
-                logger.info("[大盘] 外部新闻源无结果，启用结构化兜底新闻: %d 条", len(all_news))
-
-            logger.info(f"[大盘] 共获取 {len(all_news)} 条市场新闻")
+            if self.trend_radar_news_service:
+                logger.info("[大盘] 读取 TrendRadar 本地市场新闻...")
+                all_news = self.trend_radar_news_service.build_market_news_items(max_items=8)
+                if all_news:
+                    logger.info("[大盘] TrendRadar 市场新闻获取 %d 条", len(all_news))
+                    return all_news
+                logger.info("[大盘] TrendRadar 无可用市场新闻，启用结构化兜底新闻")
+            else:
+                logger.info("[大盘] TrendRadar 本地新闻未启用，启用结构化兜底新闻")
 
         except Exception as e:
-            logger.error(f"[大盘] 搜索市场新闻失败: {e}")
+            logger.error(f"[大盘] 读取 TrendRadar 市场新闻失败: {e}")
 
-        return all_news
+        return self._build_fallback_market_news(overview)
 
     def _build_fallback_market_news(self, overview: Optional[MarketOverview]) -> List[Dict[str, str]]:
         """
@@ -363,8 +330,6 @@ class MarketAnalyzer:
 
     def _inject_data_into_review(self, review: str, overview: MarketOverview) -> str:
         """Inject structured data tables into the corresponding LLM prose sections."""
-        import re
-
         # Build data blocks
         stats_block = self._build_stats_block(overview)
         indices_block = self._build_indices_block(overview)
@@ -759,7 +724,7 @@ if __name__ == "__main__":
 
     # 测试获取市场概览
     overview = analyzer.get_market_overview()
-    print(f"\n=== 市场概览 ===")
+    print("\n=== 市场概览 ===")
     print(f"日期: {overview.date}")
     print(f"指数数量: {len(overview.indices)}")
     for idx in overview.indices:
@@ -769,5 +734,5 @@ if __name__ == "__main__":
 
     # 测试生成模板报告
     report = analyzer._generate_template_review(overview, [])
-    print(f"\n=== 复盘报告 ===")
+    print("\n=== 复盘报告 ===")
     print(report)
