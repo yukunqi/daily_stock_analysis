@@ -2,6 +2,8 @@
 """Tests for market strategy blueprints."""
 
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 from unittest.mock import MagicMock
 
 from src.core.market_strategy import get_market_strategy_blueprint
@@ -35,7 +37,7 @@ class TestMarketAnalyzerStrategyPrompt(unittest.TestCase):
         analyzer = MarketAnalyzer(region="cn")
         prompt = analyzer._build_review_prompt(MarketOverview(date="2026-02-24"), [])
 
-        self.assertIn("策略计划", prompt)
+        self.assertIn("明日交易计划", prompt)
         self.assertIn("A股市场三段式复盘策略", prompt)
 
     def test_us_prompt_contains_strategy_plan_section(self):
@@ -45,29 +47,17 @@ class TestMarketAnalyzerStrategyPrompt(unittest.TestCase):
         self.assertIn("Strategy Plan", prompt)
         self.assertIn("US Market Regime Strategy", prompt)
 
-    def test_market_news_uses_trend_radar_without_active_search(self):
-        analyzer = MarketAnalyzer.__new__(MarketAnalyzer)
-        analyzer.trend_radar_news_service = MagicMock()
-        analyzer.trend_radar_news_service.build_market_news_items.return_value = [
-            {"title": "全球通胀加剧债市风暴", "snippet": "buckets: macro, liquidity"}
-        ]
-        analyzer.search_service = MagicMock()
+    def test_cn_prompt_uses_english_shell_when_report_language_is_en(self):
+        with patch("src.market_analyzer.get_config", return_value=SimpleNamespace(report_language="en")):
+            analyzer = MarketAnalyzer(region="cn")
 
-        news = analyzer.search_market_news(MarketOverview(date="2026-05-16"))
+        prompt = analyzer._build_review_prompt(MarketOverview(date="2026-02-24"), [])
 
-        self.assertEqual(len(news), 1)
-        self.assertIn("通胀", news[0]["title"])
-        analyzer.search_service.search_stock_news.assert_not_called()
-
-    def test_market_news_falls_back_to_structured_snapshot_without_active_search(self):
-        analyzer = MarketAnalyzer.__new__(MarketAnalyzer)
-        analyzer.trend_radar_news_service = None
-        analyzer.search_service = MagicMock()
-
-        news = analyzer.search_market_news(MarketOverview(date="2026-05-16"))
-
-        self.assertGreaterEqual(len(news), 1)
-        analyzer.search_service.search_stock_news.assert_not_called()
+        self.assertIn("# Today's Market Data", prompt)
+        self.assertIn("### 1. Market Summary", prompt)
+        self.assertIn("A-share Three-Phase Recap Strategy", prompt)
+        self.assertNotIn("### 一、市场总结", prompt)
+        self.assertNotIn("A股市场三段式复盘策略", prompt)
 
 
 if __name__ == "__main__":

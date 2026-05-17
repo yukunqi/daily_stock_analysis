@@ -14,7 +14,13 @@ YfinanceFetcher - 兜底数据源 (Priority 4)
 3. 失败后指数退避重试
 """
 
+import csv
 import logging
+from datetime import datetime
+from io import StringIO
+from typing import Optional, List, Dict, Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -31,6 +37,21 @@ from tenacity import (
 from .base import BaseFetcher, DataFetchError, STANDARD_COLUMNS, is_bse_code
 from .realtime_types import UnifiedRealtimeQuote, RealtimeSource
 from .us_index_mapping import get_us_index_yf_symbol, is_us_stock_code
+
+# 可选导入本地股票映射补丁，若缺失则使用空字典兜底
+try:
+    from src.data.stock_mapping import STOCK_NAME_MAP, is_meaningful_stock_name
+except (ImportError, ModuleNotFoundError):
+    STOCK_NAME_MAP = {}
+
+    def is_meaningful_stock_name(name: str | None, stock_code: str) -> bool:
+        """简单的名称有效性校验兜底"""
+        if not name:
+            return False
+        n = str(name).strip()
+        return bool(n and n.upper() != str(stock_code).strip().upper())
+
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +86,6 @@ class YfinanceFetcher(BaseFetcher):
 
     name = "YfinanceFetcher"
     priority = int(os.getenv("YFINANCE_PRIORITY", "5"))
-
     def __init__(self):
         """初始化 YfinanceFetcher"""
         pass
@@ -160,8 +180,7 @@ class YfinanceFetcher(BaseFetcher):
         3. 处理返回数据
         """
         import yfinance as yf
-        _configure_yfinance_cache(yf)
-
+_configure_yfinance_cache(yf)
         # 转换代码格式
         yf_code = self._convert_stock_code(stock_code)
 
@@ -303,13 +322,16 @@ class YfinanceFetcher(BaseFetcher):
 
     def get_main_indices(self, region: str = "cn") -> Optional[List[Dict[str, Any]]]:
         """
-        获取主要指数行情 (Yahoo Finance)，支持 A 股与美股。
+        获取主要指数行情 (Yahoo Finance)，支持 A 股、美股与港股。
         region=us 时委托给 _get_us_main_indices。
+        region=hk 时委托给 _get_hk_main_indices。
         """
         import yfinance as yf
 
         if region == "us":
             return self._get_us_main_indices(yf)
+        if region == "hk":
+            return self._get_hk_main_indices(yf)
 
         # A 股指数：akshare 代码 -> (yfinance 代码, 显示名称)
         yf_mapping = {
@@ -368,6 +390,38 @@ class YfinanceFetcher(BaseFetcher):
 
         return None
 
+    def _get_hk_main_indices(self, yf) -> Optional[List[Dict[str, Any]]]:
+        """获取港股主要指数行情（HSI、HSTECH、HSCEI），复用 _fetch_yf_ticker_data"""
+        # Yahoo Finance 港股指数符号映射：
+        # - HSI -> ^HSI
+        # - HSTECH -> HSTECH.HK（不是 ^HSTECH）
+        # - HSCEI -> ^HSCE（不是 ^HSCEI）
+        # 该映射由离线单测 tests/test_yfinance_hk_indices.py 固化，避免在线依赖导致非确定性失败。
+        hk_indices = {
+            'HSI': ('^HSI', '恒生指数'),
+            'HSTECH': ('HSTECH.HK', '恒生科技指数'),
+            'HSCEI': ('^HSCE', '国企指数'),
+        }
+        results = []
+        try:
+            for code, (yf_symbol, name) in hk_indices.items():
+                try:
+                    item = self._fetch_yf_ticker_data(yf, yf_symbol, name, code)
+                    if item:
+                        results.append(item)
+                        logger.debug(f"[Yfinance] 获取港股指数 {name} 成功")
+                except Exception as e:
+                    logger.warning(f"[Yfinance] 获取港股指数 {name} 失败: {e}")
+
+            if results:
+                logger.info(f"[Yfinance] 成功获取 {len(results)} 个港股指数行情")
+                return results
+
+        except Exception as e:
+            logger.error(f"[Yfinance] 获取港股指数行情失败: {e}")
+
+        return None
+
     def _is_us_stock(self, stock_code: str) -> bool:
         """
         判断代码是否为美股股票（排除美股指数）。
@@ -375,6 +429,157 @@ class YfinanceFetcher(BaseFetcher):
         委托给 us_index_mapping 模块的 is_us_stock_code()。
         """
         return is_us_stock_code(stock_code)
+
+    def _get_us_stock_quote_from_stooq(self, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
+        """
+        使用 Stooq 为美股实时行情提供免密钥兜底。
+
+        Stooq 提供的是最新交易日行情，精度不如分时实时接口，但在 Yahoo / yfinance
+        被限流时，至少能为 Web UI 提供可用价格；若可获取到昨收价，则同时提供涨跌幅等衍生指标。
+        """
+        symbol = stock_code.strip().upper()
+        stooq_symbol = f"{symbol.lower()}.us"
+        url = f"https://stooq.com/q/l/?s={stooq_symbol}"
+        request = Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; DSA/1.0; +https://github.com/ZhuLinsen/daily_stock_analysis)",
+                "Accept": "text/plain,text/csv,*/*",
+            },
+        )
+
+        try:
+            with urlopen(request, timeout=15) as response:
+                payload = response.read().decode("utf-8", "ignore").strip()
+        except (HTTPError, URLError, TimeoutError) as exc:
+            logger.warning(f"[Stooq] 获取美股 {symbol} 实时行情失败: {exc}")
+            return None
+
+        if not payload or payload.upper().startswith("NO DATA"):
+            logger.warning(f"[Stooq] 无法获取 {symbol} 的行情数据")
+            return None
+
+        def _fetch_prev_close() -> Optional[float]:
+            history_url = f"https://stooq.com/q/d/l/?s={stooq_symbol}&i=d"
+            history_request = Request(
+                history_url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (compatible; DSA/1.0; +https://github.com/ZhuLinsen/daily_stock_analysis)",
+                    "Accept": "text/plain,text/csv,*/*",
+                },
+            )
+            try:
+                with urlopen(history_request, timeout=15) as response:
+                    history_payload = response.read().decode("utf-8", "ignore").strip()
+            except (HTTPError, URLError, TimeoutError) as exc:
+                logger.debug(f"[Stooq] 获取美股 {symbol} 日线历史失败: {exc}")
+                return None
+
+            if not history_payload or history_payload.upper().startswith("NO DATA"):
+                return None
+
+            try:
+                reader = csv.reader(StringIO(history_payload))
+                header = next(reader, None)
+                if not header:
+                    return None
+
+                header_tokens = [cell.strip().lower() for cell in header]
+                has_header = "close" in header_tokens and "date" in header_tokens
+                if not has_header:
+                    return None
+
+                date_index = header_tokens.index("date")
+                close_index = header_tokens.index("close")
+
+                daily_rows: list[tuple[datetime, float]] = []
+                for row in reader:
+                    if not row:
+                        continue
+                    date_text = row[date_index].strip() if len(row) > date_index else ""
+                    close_text = row[close_index].strip() if len(row) > close_index else ""
+                    if not date_text or not close_text:
+                        continue
+                    try:
+                        dt = datetime.strptime(date_text, "%Y-%m-%d")
+                        close_val = float(close_text)
+                    except Exception:
+                        continue
+                    daily_rows.append((dt, close_val))
+
+                if len(daily_rows) < 2:
+                    return None
+
+                daily_rows.sort(key=lambda item: item[0])
+                return daily_rows[-2][1]
+            except Exception:
+                return None
+
+        try:
+            reader = csv.reader(StringIO(payload))
+            first_row = next(reader, None)
+            if first_row is None:
+                raise ValueError(f"unexpected Stooq payload: {payload}")
+
+            normalized_first_row = [cell.strip() for cell in first_row]
+            header_tokens = {cell.lower() for cell in normalized_first_row if cell}
+            has_header = 'open' in header_tokens and 'close' in header_tokens
+            row = next(reader, None) if has_header else first_row
+            if row is None:
+                raise ValueError(f"unexpected Stooq payload: {payload}")
+
+            normalized_row = [cell.strip() for cell in row]
+            while normalized_row and normalized_row[-1] == '':
+                normalized_row.pop()
+
+            if len(normalized_row) >= 8:
+                open_index, high_index, low_index, price_index, volume_index = 3, 4, 5, 6, 7
+            elif len(normalized_row) >= 7:
+                open_index, high_index, low_index, price_index, volume_index = 2, 3, 4, 5, 6
+            else:
+                raise ValueError(f"unexpected Stooq payload: {payload}")
+
+            open_price = float(normalized_row[open_index])
+            high = float(normalized_row[high_index])
+            low = float(normalized_row[low_index])
+            price = float(normalized_row[price_index])
+            volume = int(float(normalized_row[volume_index]))
+
+            prev_close = _fetch_prev_close()
+            change_amount = None
+            change_pct = None
+            amplitude = None
+            if prev_close is not None and prev_close > 0:
+                change_amount = price - prev_close
+                change_pct = (change_amount / prev_close) * 100
+                amplitude = ((high - low) / prev_close) * 100
+
+            quote = UnifiedRealtimeQuote(
+                code=symbol,
+                name=STOCK_NAME_MAP.get(symbol, ''),
+                source=RealtimeSource.STOOQ,
+                price=price,
+                change_pct=round(change_pct, 2) if change_pct is not None else None,
+                change_amount=round(change_amount, 4) if change_amount is not None else None,
+                volume=volume,
+                amount=None,
+                volume_ratio=None,
+                turnover_rate=None,
+                amplitude=round(amplitude, 2) if amplitude is not None else None,
+                open_price=open_price,
+                high=high,
+                low=low,
+                pre_close=prev_close,
+                pe_ratio=None,
+                pb_ratio=None,
+                total_mv=None,
+                circ_mv=None,
+            )
+            logger.info(f"[Stooq] 获取美股 {symbol} 兜底行情成功: 价格={price}")
+            return quote
+        except Exception as exc:
+            logger.warning(f"[Stooq] 解析美股 {symbol} 行情失败: {exc}")
+            return None
 
     def _get_us_index_realtime_quote(
         self,
@@ -515,9 +720,8 @@ class YfinanceFetcher(BaseFetcher):
                 logger.debug("[Yfinance] fast_info 失败，尝试 history 方法")
                 hist = ticker.history(period='2d')
                 if hist.empty:
-                    logger.warning(f"[Yfinance] 无法获取 {symbol} 的数据")
-                    return None
-
+                    logger.warning(f"[Yfinance] 无法获取 {symbol} 的数据，尝试 Stooq 兜底")
+                    return self._get_us_stock_quote_from_stooq(symbol)
                 today = hist.iloc[-1]
                 prev = hist.iloc[-2] if len(hist) > 1 else today
 
@@ -543,10 +747,10 @@ class YfinanceFetcher(BaseFetcher):
 
             # 获取股票名称
             try:
-                name = ticker.info.get('shortName', '') or ticker.info.get('longName', '') or symbol
+                info_name = ticker.info.get('shortName', '') or ticker.info.get('longName', '') or ''
+                name = info_name if is_meaningful_stock_name(info_name, symbol) else STOCK_NAME_MAP.get(symbol, '')
             except Exception:
-                name = symbol
-
+                name = STOCK_NAME_MAP.get(symbol, '')
             quote = UnifiedRealtimeQuote(
                 code=symbol,
                 name=name,
@@ -573,8 +777,8 @@ class YfinanceFetcher(BaseFetcher):
             return quote
 
         except Exception as e:
-            logger.warning(f"[Yfinance] 获取美股 {stock_code} 实时行情失败: {e}")
-            return None
+            logger.warning(f"[Yfinance] 获取美股 {stock_code} 实时行情失败: {e}，尝试 Stooq 兜底")
+            return self._get_us_stock_quote_from_stooq(stock_code)
 
 
 if __name__ == "__main__":

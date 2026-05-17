@@ -16,9 +16,13 @@
 3. EfinanceFetcher (3) → IwencaiMarketQueryFetcher (4, 启用时) → YfinanceFetcher (5)
 
 【未配置 TUSHARE_TOKEN 时】
-1. BaostockFetcher (0) — 默认日线主源
-2. PytdxFetcher (1) → AkshareFetcher (2) → TushareFetcher (2, 不可用则跳过)
-3. EfinanceFetcher (3) → Iwencai (4) → Yfinance (5)
+1. EfinanceFetcher (Priority 0) - 最高优先级，来自 efinance 库
+2. AkshareFetcher (Priority 1) - 来自 akshare 库
+3. PytdxFetcher (Priority 2) - 来自 pytdx 库（通达信）
+4. TushareFetcher (Priority 2) - 来自 tushare 库（不可用）
+5. BaostockFetcher (Priority 3) - 来自 baostock 库
+6. YfinanceFetcher (Priority 4) - 来自 yfinance 库
+7. LongbridgeFetcher (Priority 5) - 长桥 OpenAPI（美股/港股兜底）
 
 实时行情顺序由 REALTIME_SOURCE_PRIORITY 单独控制（默认仍优先问财/腾讯等）。
 
@@ -32,6 +36,13 @@ import importlib
 from typing import Any
 
 from .base import BaseFetcher, DataFetcherManager
+from .efinance_fetcher import EfinanceFetcher
+from .akshare_fetcher import AkshareFetcher, is_hk_stock_code
+from .tushare_fetcher import TushareFetcher
+from .pytdx_fetcher import PytdxFetcher
+from .baostock_fetcher import BaostockFetcher
+from .yfinance_fetcher import YfinanceFetcher
+from .longbridge_fetcher import LongbridgeFetcher
 from .us_index_mapping import is_us_index_code, is_us_stock_code, get_us_index_yf_symbol, US_INDEX_MAPPING
 
 _LAZY_EXPORTS = {
@@ -57,18 +68,18 @@ def __getattr__(name: str) -> Any:
 
 
 __all__ = [
-    "BaseFetcher",
-    "DataFetcherManager",
-    "EfinanceFetcher",
-    "AkshareFetcher",
-    "TushareFetcher",
-    "PytdxFetcher",
-    "BaostockFetcher",
-    "YfinanceFetcher",
-    "IwencaiMarketQueryFetcher",
-    "is_us_index_code",
-    "is_us_stock_code",
-    "is_hk_stock_code",
-    "get_us_index_yf_symbol",
-    "US_INDEX_MAPPING",
+    'BaseFetcher',
+    'DataFetcherManager',
+    'EfinanceFetcher',
+    'AkshareFetcher',
+    'TushareFetcher',
+    'PytdxFetcher',
+    'BaostockFetcher',
+    'YfinanceFetcher',
+    'LongbridgeFetcher',
+    'is_us_index_code',
+    'is_us_stock_code',
+    'is_hk_stock_code',
+    'get_us_index_yf_symbol',
+    'US_INDEX_MAPPING',
 ]
