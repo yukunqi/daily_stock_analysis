@@ -1045,8 +1045,8 @@ class DataFetcherManager:
                 yfinance,
                 *optional_fetchers,
             ]
-        if iwencai_fetcher_should_register():
-            self._fetchers.append(IwencaiMarketQueryFetcher())
+            if iwencai_fetcher_should_register():
+                self._fetchers.append(IwencaiMarketQueryFetcher())
 
             # 按优先级排序（Tushare 如果配置了 Token 且初始化成功，优先级为 0）
             self._fetchers.sort(key=lambda f: f.priority)

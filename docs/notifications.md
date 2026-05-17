@@ -43,17 +43,14 @@
 | Key | Tier | Channel / feature | Actions source | Default |
 | --- | --- | --- | --- | --- |
 | `WECHAT_WEBHOOK_URL` | minimal | wechat | Secret | - |
-| `WECHAT_MSG_TYPE` | advanced | wechat | Variable or Secret | `markdown` |
 | `FEISHU_WEBHOOK_URL` | minimal | feishu | Secret | - |
 | `FEISHU_WEBHOOK_SECRET` | advanced | feishu | Secret | - |
 | `FEISHU_WEBHOOK_KEYWORD` | advanced | feishu | Variable or Secret | - |
 | `TELEGRAM_BOT_TOKEN` | minimal | telegram | Secret | - |
 | `TELEGRAM_CHAT_ID` | minimal | telegram | Secret | - |
-| `TELEGRAM_MESSAGE_THREAD_ID` | advanced | telegram | Secret | - |
 | `EMAIL_SENDER` | minimal | email | Variable or Secret | - |
 | `EMAIL_PASSWORD` | minimal | email | Secret | - |
 | `EMAIL_RECEIVERS` | advanced | email | Variable or Secret | - |
-| `EMAIL_SENDER_NAME` | advanced | email | Variable or Secret | `daily_stock_analysis股票分析助手` |
 | `PUSHOVER_USER_KEY` | minimal | pushover | Secret | - |
 | `PUSHOVER_API_TOKEN` | minimal | pushover | Secret | - |
 | `NTFY_URL` | minimal | ntfy | Secret | - |
@@ -67,10 +64,6 @@
 | `CUSTOM_WEBHOOK_BODY_TEMPLATE` | advanced | custom | Variable or Secret | - |
 | `WEBHOOK_VERIFY_SSL` | advanced | ntfy, gotify, custom, astrbot | Variable or Secret | `true` |
 | `DISCORD_WEBHOOK_URL` | minimal | discord | Secret | - |
-| `DISCORD_BOT_TOKEN` | minimal | discord | Secret | - |
-| `DISCORD_MAIN_CHANNEL_ID` | minimal | discord | Secret | - |
-| `ASTRBOT_URL` | minimal | astrbot | Secret | - |
-| `ASTRBOT_TOKEN` | advanced | astrbot | Secret | - |
 | `SERVERCHAN3_SENDKEY` | minimal | serverchan3 | Secret | - |
 | `SLACK_WEBHOOK_URL` | minimal | slack | Secret | - |
 | `SLACK_BOT_TOKEN` | minimal | slack | Secret | - |

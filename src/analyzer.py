@@ -57,9 +57,11 @@ logger = logging.getLogger(__name__)
 litellm.set_verbose = False
 litellm.suppress_debug_info = True
 litellm.log_level = "WARNING"
-litellm.verbose_logger.setLevel(logging.WARNING)
-for _handler in list(litellm.verbose_logger.handlers):
-    _handler.setLevel(logging.WARNING)
+_litellm_verbose_logger = getattr(litellm, "verbose_logger", None)
+if _litellm_verbose_logger is not None:
+    _litellm_verbose_logger.setLevel(logging.WARNING)
+    for _handler in list(_litellm_verbose_logger.handlers):
+        _handler.setLevel(logging.WARNING)
 
 
 def _normalize_risk_warning_values(value: Any) -> List[str]:
@@ -1998,7 +2000,6 @@ class GeminiAnalyzer:
             litellm_model,
             config.llm_model_list,
         )
-        if len(legacy_model_list) <= 1 and keys:
         if not keys and _model_uses_managed_keys(litellm_model):
             logger.warning(
                 f"Analyzer LLM: no valid API key configured for {litellm_model}; "

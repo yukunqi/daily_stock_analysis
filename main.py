@@ -765,6 +765,24 @@ def _build_schedule_time_provider(default_schedule_time: str):
     return _provider
 
 
+def _is_explicit_one_shot_run(args: argparse.Namespace) -> bool:
+    """Whether CLI flags explicitly request a one-off action instead of long-running modes."""
+    if any(getattr(args, name, False) for name in ("schedule", "serve", "serve_only", "webui", "webui_only")):
+        return False
+
+    one_shot_flags = (
+        "market_review",
+        "backtest",
+        "dry_run",
+        "no_notify",
+        "single_notify",
+        "no_market_review",
+        "force_run",
+        "no_context_snapshot",
+    )
+    return bool(getattr(args, "stocks", None)) or any(getattr(args, name, False) for name in one_shot_flags)
+
+
 def main() -> int:
     """
     主入口函数
@@ -806,17 +824,21 @@ def main() -> int:
     logger.info("=" * 60)
 
     # 验证配置
-    for issue in config.validate_structured():
-        if args.dry_run and issue.field == "LITELLM_CONFIG":
-            continue
-        if args.no_notify and issue.field == "WECHAT_WEBHOOK_URL":
-            continue
-        log_method = {
-            "error": logger.warning,
-            "warning": logger.warning,
-            "info": logger.info,
-        }.get(issue.severity, logger.warning)
-        log_method(issue.message)
+    if hasattr(config, "validate_structured"):
+        for issue in config.validate_structured():
+            if args.dry_run and issue.field == "LITELLM_CONFIG":
+                continue
+            if args.no_notify and issue.field == "WECHAT_WEBHOOK_URL":
+                continue
+            log_method = {
+                "error": logger.warning,
+                "warning": logger.warning,
+                "info": logger.info,
+            }.get(issue.severity, logger.warning)
+            log_method(issue.message)
+    elif hasattr(config, "validate"):
+        for error in config.validate():
+            logger.warning(error)
 
     if getattr(args, "check_notify", False):
         from src.services.notification_diagnostics import (
@@ -1032,42 +1054,42 @@ def main() -> int:
                 logger.info(f"启动时立即执行: {should_run_immediately}")
 
                 from src.scheduler import run_with_schedule
-            scheduled_stock_codes = _resolve_scheduled_stock_codes(stock_codes)
-            schedule_time_provider = _build_schedule_time_provider(config.schedule_time)
+                scheduled_stock_codes = _resolve_scheduled_stock_codes(stock_codes)
+                schedule_time_provider = _build_schedule_time_provider(config.schedule_time)
 
                 def scheduled_task():
                     runtime_config = _reload_runtime_config()
-                run_full_analysis(runtime_config, args, scheduled_stock_codes)
+                    run_full_analysis(runtime_config, args, scheduled_stock_codes)
 
-            background_tasks = []
-            if getattr(config, 'agent_event_monitor_enabled', False):
-                from src.agent.events import build_event_monitor_from_config, run_event_monitor_once
+                background_tasks = []
+                if getattr(config, 'agent_event_monitor_enabled', False):
+                    from src.agent.events import build_event_monitor_from_config, run_event_monitor_once
 
-                monitor = build_event_monitor_from_config(config)
-                if monitor is not None:
-                    interval_minutes = max(1, getattr(config, 'agent_event_monitor_interval_minutes', 5))
+                    monitor = build_event_monitor_from_config(config)
+                    if monitor is not None:
+                        interval_minutes = max(1, getattr(config, 'agent_event_monitor_interval_minutes', 5))
 
-                    def event_monitor_task():
-                        triggered = run_event_monitor_once(monitor)
-                        if triggered:
-                            logger.info("[EventMonitor] 本轮触发 %d 条提醒", len(triggered))
+                        def event_monitor_task():
+                            triggered = run_event_monitor_once(monitor)
+                            if triggered:
+                                logger.info("[EventMonitor] 本轮触发 %d 条提醒", len(triggered))
 
-                    background_tasks.append({
-                        "task": event_monitor_task,
-                        "interval_seconds": interval_minutes * 60,
-                        "run_immediately": True,
-                        "name": "agent_event_monitor",
-                    })
-                else:
-                    logger.info("EventMonitor 已启用，但未加载到有效规则，跳过后台提醒任务")
+                        background_tasks.append({
+                            "task": event_monitor_task,
+                            "interval_seconds": interval_minutes * 60,
+                            "run_immediately": True,
+                            "name": "agent_event_monitor",
+                        })
+                    else:
+                        logger.info("EventMonitor 已启用，但未加载到有效规则，跳过后台提醒任务")
 
                 run_with_schedule(
                     task=scheduled_task,
                     schedule_time=stock_time,
                     run_immediately=should_run_immediately,
-                background_tasks=background_tasks,
-                schedule_time_provider=schedule_time_provider,
-            )
+                    background_tasks=background_tasks,
+                    schedule_time_provider=schedule_time_provider,
+                )
             return 0
 
         # 模式3: 正常单次运行

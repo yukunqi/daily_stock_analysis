@@ -168,7 +168,7 @@ class BaseSearchProvider(ABC):
         self._key_cycle = cycle(api_keys) if api_keys else None
         self._key_usage: Dict[str, int] = {key: 0 for key in api_keys}
         self._key_errors: Dict[str, int] = {key: 0 for key in api_keys}
-self._state_lock = threading.RLock()
+        self._state_lock = threading.RLock()
 
     @property
     def name(self) -> str:
@@ -185,20 +185,22 @@ self._state_lock = threading.RLock()
 
         策略：轮询 + 跳过错误过多的 key
         """
-        with self._state_lock:if not self._key_cycle:
-            return None
+        with self._state_lock:
+            if not self._key_cycle:
+                return None
 
-        # 最多尝试所有 key
-        for _ in range(len(self._api_keys)):
-            key = next(self._key_cycle)
-            # 跳过错误次数过多的 key（超过 3 次）
-            if self._key_errors.get(key, 0) < 3:
-                return key
+            # 最多尝试所有 key
+            for _ in range(len(self._api_keys)):
+                key = next(self._key_cycle)
+                # 跳过错误次数过多的 key（超过 3 次）
+                if self._key_errors.get(key, 0) < 3:
+                    return key
 
-        # 所有 key 都有问题，重置错误计数并返回第一个
-        logger.warning(f"[{self._name}] 所有 API Key 都有错误记录，重置错误计数")
-        self._key_errors = {key: 0 for key in self._api_keys}
-        return self._api_keys[0] if self._api_keys else None
+            # 所有 key 都有问题，重置错误计数并返回第一个
+            logger.warning(f"[{self._name}] 所有 API Key 都有错误记录，重置错误计数")
+            self._key_errors = {key: 0 for key in self._api_keys}
+            return self._api_keys[0] if self._api_keys else None
+
     def _record_success(self, key: str) -> None:
         """记录成功使用"""
         with self._state_lock:
@@ -206,16 +208,22 @@ self._state_lock = threading.RLock()
             # 成功后减少错误计数
             if key in self._key_errors and self._key_errors[key] > 0:
                 self._key_errors[key] -= 1
+
     def _record_error(self, key: str) -> None:
         """记录错误"""
         with self._state_lock:
             self._key_errors[key] = self._key_errors.get(key, 0) + 1
             error_count = self._key_errors[key]
         logger.warning(f"[{self._name}] API Key {key[:8]}... 错误计数: {error_count}")
+
     @abstractmethod
     def _do_search(self, query: str, api_key: str, max_results: int, days: int = 7) -> SearchResponse:
         """执行搜索（子类实现）"""
         pass
+
+    def search(self, query: str, max_results: int = 5, days: int = 7) -> SearchResponse:
+        """执行搜索"""
+        return self._execute_search(query, max_results=max_results, days=days)
 
     def _execute_search(
         self,
@@ -223,7 +231,7 @@ self._state_lock = threading.RLock()
         *,
         max_results: int = 5,
         days: int = 7,
-api_key: Optional[str] = None,
+        api_key: Optional[str] = None,
         **search_kwargs: Any,
     ) -> SearchResponse:
         """Run the shared search flow with an optional preselected API key."""
@@ -961,7 +969,7 @@ class SerpAPISearchProvider(BaseSearchProvider):
 
     文档：https://serpapi.com/baidu-search-api?utm_source=github_daily_stock_analysis
     """
-_ORGANIC_CONTENT_FETCH_LIMIT = 1
+    _ORGANIC_CONTENT_FETCH_LIMIT = 1
     _ORGANIC_CONTENT_FETCH_RANK_LIMIT = 2
     _ORGANIC_CONTENT_FETCH_TIMEOUT = 2
     _ORGANIC_SNIPPET_SUFFICIENT_LENGTH = 140
@@ -2581,7 +2589,7 @@ class SearchService:
         "{name} technical analysis",
         "{name} {code} performance volume",
     ]
-NEWS_OVERSAMPLE_FACTOR = 2
+    NEWS_OVERSAMPLE_FACTOR = 2
     NEWS_OVERSAMPLE_MAX = 10
     FUTURE_TOLERANCE_DAYS = 1
     _CHINESE_TEXT_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
@@ -2682,17 +2690,18 @@ NEWS_OVERSAMPLE_FACTOR = 2
         if minimax_keys:
             self._providers.append(MiniMaxSearchProvider(minimax_keys))
             logger.info(f"已配置 MiniMax 搜索，共 {len(minimax_keys)} 个 API Key")
-# 6. SearXNG（自建实例优先；未配置时可自动发现公共实例）
-        searxng_provider = SearXNGSearchProvider(
-            searxng_base_urls,
-            use_public_instances=bool(searxng_public_instances_enabled and not searxng_base_urls),
-        )
-        if searxng_provider.is_available:
-            self._providers.append(searxng_provider)
-            if searxng_base_urls:
-                logger.info("已配置 SearXNG 搜索，共 %s 个自建实例", len(searxng_base_urls))
-            else:
-                logger.info("已启用 SearXNG 公共实例自动发现模式")
+        # 6. SearXNG（自建实例优先；未配置时可自动发现公共实例）
+        if searxng_base_urls or (searxng_public_instances_enabled and not self._providers):
+            searxng_provider = SearXNGSearchProvider(
+                searxng_base_urls,
+                use_public_instances=bool(searxng_public_instances_enabled and not searxng_base_urls),
+            )
+            if searxng_provider.is_available:
+                self._providers.append(searxng_provider)
+                if searxng_base_urls:
+                    logger.info("已配置 SearXNG 搜索，共 %s 个自建实例", len(searxng_base_urls))
+                else:
+                    logger.info("已启用 SearXNG 公共实例自动发现模式")
 
         # 7. Anspire Search（实时智能搜索优化）
         if anspire_keys:
@@ -2708,7 +2717,7 @@ NEWS_OVERSAMPLE_FACTOR = 2
         self._cache_inflight: Dict[str, threading.Event] = {}
         # Default cache TTL in seconds (10 minutes)
         self._cache_ttl: int = 600
-logger.info(
+        logger.info(
             "新闻时效策略已启用: profile=%s, profile_days=%s, NEWS_MAX_AGE_DAYS=%s, effective_window=%s",
             self.news_strategy_profile,
             self.news_profile_days,
@@ -2929,8 +2938,9 @@ logger.info(
                     oldest = sorted(self._cache.keys(), key=lambda k: self._cache[k][0])[:excess]
                     for k in oldest:
                         self._cache.pop(k, None)
-        self._cache[key] = (time.time(), response)
-def _effective_news_window_days(self) -> int:
+            self._cache[key] = (time.time(), response)
+
+    def _effective_news_window_days(self) -> int:
         """Resolve effective news window from strategy profile and global max-age."""
         return resolve_news_window_days(
             news_max_age_days=self.news_max_age_days,
@@ -3289,11 +3299,11 @@ def _effective_news_window_days(self) -> int:
             fallback_response: Optional[SearchResponse] = None
             best_preferred_response: Optional[SearchResponse] = None
             best_preferred_count = 0
-        for provider in self._providers:
-            if not provider.is_available:
-                continue
+            for provider in self._providers:
+                if not provider.is_available:
+                    continue
 
-            search_kwargs: Dict[str, Any] = {}
+                search_kwargs: Dict[str, Any] = {}
                 if isinstance(provider, TavilySearchProvider):
                     search_kwargs["topic"] = "news"
                 elif isinstance(provider, BraveSearchProvider):
@@ -3305,7 +3315,7 @@ def _effective_news_window_days(self) -> int:
                     )
 
                 response = provider.search(query, provider_max_results, days=search_days, **search_kwargs)
-filtered_response = self._filter_news_response(
+                filtered_response = self._filter_news_response(
                     response,
                     search_days=search_days,
                     max_results=provider_max_results,
@@ -3365,7 +3375,7 @@ filtered_response = self._filter_news_response(
                     else:
                         logger.warning(
                             "%s 搜索失败: %s，尝试下一个引擎",
-provider.name,
+                            provider.name,
                             response.error_message,
                         )
 
@@ -3383,11 +3393,11 @@ provider.name,
                     success=True,
                     error_message=None,
                 )
-        # 所有引擎都失败
-        return SearchResponse(
-            query=query, results=[], provider="None", success=False, error_message="所有搜索引擎都不可用或搜索失败"
-        )
-finally:
+            # 所有引擎都失败
+            return SearchResponse(
+                query=query, results=[], provider="None", success=False, error_message="所有搜索引擎都不可用或搜索失败"
+            )
+        finally:
             if cache_owner and cache_event is not None:
                 self._release_cache_fill(cache_key, cache_event)
     
@@ -3560,7 +3570,7 @@ finally:
                     'strict_freshness': False,
                 },
             ]
-search_days = self._effective_news_window_days()
+        search_days = self._effective_news_window_days()
         target_per_dimension = 3
         provider_max_results = self._provider_request_size(target_per_dimension)
 
@@ -3594,7 +3604,7 @@ search_days,
             provider_index += 1
 
             logger.info(f"[情报搜索] {dim['desc']}: 使用 {provider.name}")
-if isinstance(provider, TavilySearchProvider) and dim.get('tavily_topic'):
+            if isinstance(provider, TavilySearchProvider) and dim.get('tavily_topic'):
                 response = provider.search(
                     dim["query"],
                     max_results=provider_max_results,
@@ -3612,7 +3622,7 @@ if isinstance(provider, TavilySearchProvider) and dim.get('tavily_topic'):
                     response,
                     search_days=search_days,
                     max_results=target_per_dimension,
-                    log_scope=f"{stock_code}:{provider.name}:{dim["name"]}",
+                    log_scope=f"{stock_code}:{provider.name}:{dim['name']}",
                 )
             else:
                 filtered_response = self._normalize_and_limit_response(
@@ -3890,13 +3900,14 @@ def get_search_service() -> SearchService:
 
     if _search_service is None:
         with _search_service_lock:
-            if _search_service is None:from src.config import get_config
+            if _search_service is None:
+                from src.config import get_config
 
-        config = get_config()
-
-        _search_service = SearchService(
-            bocha_keys=config.bocha_api_keys,
-            tavily_keys=config.tavily_api_keys,anspire_keys=config.anspire_api_keys,
+                config = get_config()
+                _search_service = SearchService(
+                    bocha_keys=config.bocha_api_keys,
+                    tavily_keys=config.tavily_api_keys,
+                    anspire_keys=config.anspire_api_keys,
                     brave_keys=config.brave_api_keys,
                     serpapi_keys=config.serpapi_keys,
                     minimax_keys=config.minimax_api_keys,
@@ -3904,7 +3915,7 @@ def get_search_service() -> SearchService:
                     searxng_public_instances_enabled=config.searxng_public_instances_enabled,
                     news_max_age_days=config.news_max_age_days,
                     news_strategy_profile=getattr(config, "news_strategy_profile", "short"),
-        )
+                )
     return _search_service
 
 

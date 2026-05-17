@@ -564,7 +564,7 @@ class Config:
 
     # === 数据源 API Token ===
     tushare_token: Optional[str] = None
-tickflow_api_key: Optional[str] = None
+    tickflow_api_key: Optional[str] = None
     longbridge_app_key: Optional[str] = None
     longbridge_app_secret: Optional[str] = None
     longbridge_access_token: Optional[str] = None
@@ -686,7 +686,7 @@ tickflow_api_key: Optional[str] = None
 
     # 飞书 Webhook
     feishu_webhook_url: Optional[str] = None
-feishu_webhook_secret: Optional[str] = None  # 自定义机器人签名密钥（可选）
+    feishu_webhook_secret: Optional[str] = None  # 自定义机器人签名密钥（可选）
     feishu_webhook_keyword: Optional[str] = None  # 自定义机器人关键词（可选）
 
     # Telegram 配置（需要同时配置 Bot Token 和 Chat ID）
@@ -707,7 +707,7 @@ feishu_webhook_secret: Optional[str] = None  # 自定义机器人签名密钥（
     # Pushover 配置（手机/桌面推送通知）
     pushover_user_key: Optional[str] = None  # 用户 Key（https://pushover.net 获取）
     pushover_api_token: Optional[str] = None  # 应用 API Token
-# ntfy 配置（完整 topic endpoint，例如 https://ntfy.sh/my-topic）
+    # ntfy 配置（完整 topic endpoint，例如 https://ntfy.sh/my-topic）
     ntfy_url: Optional[str] = None
     ntfy_token: Optional[str] = None
 
@@ -845,13 +845,13 @@ feishu_webhook_secret: Optional[str] = None  # 自定义机器人签名密钥（
     # 东财接口补丁开关
     enable_eastmoney_patch: bool = False
     # 实时行情数据源优先级（逗号分隔）
-    # 默认将 iwencai_market 置首；未启用问财或未注册 Fetcher 时会自动跳过并走后续源
+    # 默认走无额外配置即可使用的数据源；启用问财时由 fetcher 注册逻辑接入。
     # - iwencai_market（别名 wencai_skillhub）: 同花顺问财 OpenAPI，需 IWENCAI_MARKET_QUERY_ENABLED、IWENCAI_API_KEY 与 CLI
     # - tencent: 腾讯财经，有量比/换手率/市盈率等，单股查询稳定
     # - akshare_sina: 新浪财经，基本行情稳定，但无量比
     # - efinance/akshare_em: 东财全量接口，数据最全但容易被封
     # - tushare: Tushare Pro，需要2000积分，数据全面（未显式配置 REALTIME 且配置了 TUSHARE_TOKEN 时会自动插在问财之后）
-    realtime_source_priority: str = "iwencai_market,tencent,akshare_sina,efinance,akshare_em"
+    realtime_source_priority: str = "tencent,akshare_sina,efinance,akshare_em"
     # 同花顺问财行情技能（hithink-market-query）：可选实时源，默认关闭
     iwencai_market_query_enabled: bool = False
     iwencai_cli_path: Optional[str] = None  # default: <repo>/skills/hithink-market-query/scripts/cli.py
@@ -1293,7 +1293,7 @@ feishu_webhook_secret: Optional[str] = None  # 自定义机器人签名密钥（
         else:
             # 未显式配置时，根据消息类型选择默认字节数
             wechat_max_bytes = 2048 if wechat_msg_type_lower == "text" else 4000
-# Preserve historical semantics for startup flags: only an explicit
+        # Preserve historical semantics for startup flags: only an explicit
         # literal "true" enables immediate execution; empty strings stay False.
         legacy_run_immediately_env = cls._resolve_env_value(
             'RUN_IMMEDIATELY',
@@ -1466,8 +1466,6 @@ feishu_webhook_secret: Optional[str] = None  # 自定义机器人签名密钥（
             rsshub_finance_enabled=os.getenv("RSSHUB_FINANCE_ENABLED", "false").lower() == "true",
             rsshub_base_url=os.getenv("RSSHUB_BASE_URL", "http://localhost:1200"),
             rsshub_finance_routes=os.getenv("RSSHUB_FINANCE_ROUTES", ""),
-            news_max_age_days=max(1, int(os.getenv("NEWS_MAX_AGE_DAYS", "3"))),
-            bias_threshold=max(1.0, float(os.getenv("BIAS_THRESHOLD", "5.0"))),
             trend_radar_news_enabled=os.getenv("TREND_RADAR_NEWS_ENABLED", "false").lower() == "true",
             trend_radar_output_dir=os.getenv(
                 "TREND_RADAR_OUTPUT_DIR",
@@ -1481,44 +1479,7 @@ feishu_webhook_secret: Optional[str] = None  # 自定义机器人签名密钥（
             news_content_fetch_timeout=max(1, int(os.getenv("NEWS_CONTENT_FETCH_TIMEOUT", "8"))),
             news_content_max_chars=max(200, int(os.getenv("NEWS_CONTENT_MAX_CHARS", "2500"))),
             news_content_cache_ttl_hours=max(1, int(os.getenv("NEWS_CONTENT_CACHE_TTL_HOURS", "168"))),
-            agent_mode=os.getenv("AGENT_MODE", "false").lower() == "true",
-            agent_max_steps=int(os.getenv("AGENT_MAX_STEPS", "10")),
-            agent_skills=[s.strip() for s in os.getenv("AGENT_SKILLS", "").split(",") if s.strip()],
-            agent_strategy_dir=os.getenv("AGENT_STRATEGY_DIR"),
-            wechat_webhook_url=os.getenv("WECHAT_WEBHOOK_URL"),
-            feishu_webhook_url=os.getenv("FEISHU_WEBHOOK_URL"),
-            telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN"),
-            telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID"),
-            telegram_message_thread_id=os.getenv("TELEGRAM_MESSAGE_THREAD_ID"),
-            email_sender=os.getenv("EMAIL_SENDER"),
-            email_sender_name=os.getenv("EMAIL_SENDER_NAME", "daily_stock_analysis股票分析助手"),
-            email_password=os.getenv("EMAIL_PASSWORD"),
-            email_receivers=[r.strip() for r in os.getenv("EMAIL_RECEIVERS", "").split(",") if r.strip()],
             stock_email_groups=cls._parse_stock_email_groups(),
-            pushover_user_key=os.getenv("PUSHOVER_USER_KEY"),
-            pushover_api_token=os.getenv("PUSHOVER_API_TOKEN"),
-            pushplus_token=os.getenv("PUSHPLUS_TOKEN"),
-            pushplus_topic=os.getenv("PUSHPLUS_TOPIC"),
-            serverchan3_sendkey=os.getenv("SERVERCHAN3_SENDKEY"),
-            custom_webhook_urls=[u.strip() for u in os.getenv("CUSTOM_WEBHOOK_URLS", "").split(",") if u.strip()],
-            custom_webhook_bearer_token=os.getenv("CUSTOM_WEBHOOK_BEARER_TOKEN"),
-            webhook_verify_ssl=os.getenv("WEBHOOK_VERIFY_SSL", "true").lower() == "true",
-            discord_bot_token=os.getenv("DISCORD_BOT_TOKEN"),
-            discord_main_channel_id=os.getenv("DISCORD_MAIN_CHANNEL_ID"),
-            discord_webhook_url=os.getenv("DISCORD_WEBHOOK_URL"),
-            astrbot_url=os.getenv("ASTRBOT_URL"),
-            astrbot_token=os.getenv("ASTRBOT_TOKEN"),
-            single_stock_notify=os.getenv("SINGLE_STOCK_NOTIFY", "false").lower() == "true",
-            report_type=cls._parse_report_type(os.getenv("REPORT_TYPE", "simple")),
-            report_summary_only=os.getenv("REPORT_SUMMARY_ONLY", "false").lower() == "true",
-            report_templates_dir=os.getenv("REPORT_TEMPLATES_DIR", "templates"),
-            report_renderer_enabled=os.getenv("REPORT_RENDERER_ENABLED", "false").lower() == "true",
-            report_integrity_enabled=os.getenv("REPORT_INTEGRITY_ENABLED", "true").lower() == "true",
-            report_integrity_retry=int(os.getenv("REPORT_INTEGRITY_RETRY", "1")),
-            report_history_compare_n=int(os.getenv("REPORT_HISTORY_COMPARE_N", "0")),
-            analysis_delay=float(os.getenv("ANALYSIS_DELAY", "0")),
-            merge_email_notification=os.getenv("MERGE_EMAIL_NOTIFICATION", "false").lower() == "true",
-            feishu_max_bytes=int(os.getenv("FEISHU_MAX_BYTES", "20000")),
             pushover_user_key=os.getenv('PUSHOVER_USER_KEY'),
             pushover_api_token=os.getenv('PUSHOVER_API_TOKEN'),
             ntfy_url=os.getenv('NTFY_URL'),
@@ -1587,39 +1548,10 @@ feishu_webhook_secret: Optional[str] = None  # 自定义机器人签名密钥（
             feishu_max_bytes=parse_env_int(os.getenv('FEISHU_MAX_BYTES'), 20000, field_name='FEISHU_MAX_BYTES', minimum=1),
             wechat_max_bytes=wechat_max_bytes,
             wechat_msg_type=wechat_msg_type_lower,
-            discord_max_words=int(os.getenv("DISCORD_MAX_WORDS", "2000")),
             discord_max_words=parse_env_int(os.getenv('DISCORD_MAX_WORDS'), 2000, field_name='DISCORD_MAX_WORDS', minimum=1),
             markdown_to_image_channels=[
                 c.strip().lower() for c in os.getenv("MARKDOWN_TO_IMAGE_CHANNELS", "").split(",") if c.strip()
             ],
-            markdown_to_image_max_chars=int(os.getenv("MARKDOWN_TO_IMAGE_MAX_CHARS", "15000")),
-            md2img_engine=cls._parse_md2img_engine(os.getenv("MD2IMG_ENGINE", "wkhtmltoimage")),
-            prefetch_realtime_quotes=os.getenv("PREFETCH_REALTIME_QUOTES", "true").lower() == "true",
-            database_path=os.getenv("DATABASE_PATH", "./data/stock_analysis.db"),
-            save_context_snapshot=os.getenv("SAVE_CONTEXT_SNAPSHOT", "true").lower() == "true",
-            backtest_enabled=os.getenv("BACKTEST_ENABLED", "true").lower() == "true",
-            backtest_eval_window_days=int(os.getenv("BACKTEST_EVAL_WINDOW_DAYS", "10")),
-            backtest_min_age_days=int(os.getenv("BACKTEST_MIN_AGE_DAYS", "14")),
-            backtest_engine_version=os.getenv("BACKTEST_ENGINE_VERSION", "v1"),
-            backtest_neutral_band_pct=float(os.getenv("BACKTEST_NEUTRAL_BAND_PCT", "2.0")),
-            log_dir=os.getenv("LOG_DIR", "./logs"),
-            log_level=os.getenv("LOG_LEVEL", "INFO"),
-            max_workers=int(os.getenv("MAX_WORKERS", "3")),
-            debug=os.getenv("DEBUG", "false").lower() == "true",
-            config_validate_mode=os.getenv("CONFIG_VALIDATE_MODE", "warn").lower(),
-            http_proxy=os.getenv("HTTP_PROXY"),
-            https_proxy=os.getenv("HTTPS_PROXY"),
-            schedule_enabled=os.getenv("SCHEDULE_ENABLED", "false").lower() == "true",
-            schedule_time=os.getenv("SCHEDULE_TIME", "18:00"),
-            market_review_schedule_time=os.getenv("MARKET_REVIEW_SCHEDULE_TIME", "").strip() or None,
-            schedule_run_immediately=os.getenv("SCHEDULE_RUN_IMMEDIATELY", "true").lower() == "true",
-            run_immediately=os.getenv("RUN_IMMEDIATELY", "true").lower() == "true",
-            market_review_enabled=os.getenv("MARKET_REVIEW_ENABLED", "true").lower() == "true",
-            market_review_region=cls._parse_market_review_region(os.getenv("MARKET_REVIEW_REGION", "cn")),
-            trading_day_check_enabled=os.getenv("TRADING_DAY_CHECK_ENABLED", "true").lower() != "false",
-            webui_enabled=os.getenv("WEBUI_ENABLED", "false").lower() == "true",
-            webui_host=os.getenv("WEBUI_HOST", "127.0.0.1"),
-            webui_port=int(os.getenv("WEBUI_PORT", "8000")),
             markdown_to_image_max_chars=parse_env_int(
                 os.getenv('MARKDOWN_TO_IMAGE_MAX_CHARS'),
                 15000,
@@ -1686,11 +1618,6 @@ feishu_webhook_secret: Optional[str] = None  # 自定义机器人签名密钥（
             webui_host=os.getenv('WEBUI_HOST', '127.0.0.1'),
             webui_port=parse_env_int(os.getenv('WEBUI_PORT'), 8000, field_name='WEBUI_PORT', minimum=1, maximum=65535),
             # 机器人配置
-            bot_enabled=os.getenv("BOT_ENABLED", "true").lower() == "true",
-            bot_command_prefix=os.getenv("BOT_COMMAND_PREFIX", "/"),
-            bot_rate_limit_requests=int(os.getenv("BOT_RATE_LIMIT_REQUESTS", "10")),
-            bot_rate_limit_window=int(os.getenv("BOT_RATE_LIMIT_WINDOW", "60")),
-            bot_admin_users=[u.strip() for u in os.getenv("BOT_ADMIN_USERS", "").split(",") if u.strip()],
             bot_enabled=os.getenv('BOT_ENABLED', 'true').lower() == 'true',
             bot_command_prefix=os.getenv('BOT_COMMAND_PREFIX', '/'),
             bot_rate_limit_requests=parse_env_int(os.getenv('BOT_RATE_LIMIT_REQUESTS'), 10, field_name='BOT_RATE_LIMIT_REQUESTS', minimum=1),
@@ -1727,8 +1654,6 @@ feishu_webhook_secret: Optional[str] = None  # 自定义机器人签名密钥（
             # - tushare: Tushare Pro，需要2000积分，数据全面
             # - iwencai_market / wencai_skillhub: 问财 OpenAPI（IWENCAI_API_KEY + hithink-market-query CLI）
             realtime_source_priority=cls._resolve_realtime_source_priority(),
-            realtime_cache_ttl=int(os.getenv("REALTIME_CACHE_TTL", "600")),
-            circuit_breaker_cooldown=int(os.getenv("CIRCUIT_BREAKER_COOLDOWN", "300")),
             iwencai_market_query_enabled=os.getenv("IWENCAI_MARKET_QUERY_ENABLED", "false").lower() == "true",
             iwencai_cli_path=os.getenv("IWENCAI_CLI_PATH", "").strip() or None,
             iwencai_market_query_template=os.getenv(
@@ -2295,11 +2220,10 @@ feishu_webhook_secret: Optional[str] = None  # 自定义机器人签名密钥（
         Resolve realtime source priority with automatic tushare injection.
 
         When TUSHARE_TOKEN is configured but REALTIME_SOURCE_PRIORITY is not
-        explicitly set, insert ``tushare`` after ``iwencai_market`` so iWencai is
-        tried first when enabled, with Tushare as the next paid fallback.
+        explicitly set, prefer Tushare before public fallback sources.
         """
         explicit = os.getenv("REALTIME_SOURCE_PRIORITY")
-        default_priority = "iwencai_market,tencent,akshare_sina,efinance,akshare_em"
+        default_priority = "tencent,akshare_sina,efinance,akshare_em"
 
         if explicit:
             # User explicitly set priority, respect it
@@ -2307,11 +2231,11 @@ feishu_webhook_secret: Optional[str] = None  # 自定义机器人签名密钥（
 
         tushare_token = os.getenv("TUSHARE_TOKEN", "").strip()
         if tushare_token:
-            # Token configured but no explicit priority override: tushare after iWencai
+            # Token configured but no explicit priority override: use Tushare first.
             import logging
 
             logger = logging.getLogger(__name__)
-            resolved = "iwencai_market,tushare,tencent,akshare_sina,efinance,akshare_em"
+            resolved = "tushare,tencent,akshare_sina,efinance,akshare_em"
             logger.info(f"TUSHARE_TOKEN detected, auto-injecting tushare into realtime priority: {resolved}")
             return resolved
 
@@ -2470,7 +2394,7 @@ feishu_webhook_secret: Optional[str] = None  # 自定义机器人签名密钥（
             issues.append(
                 ConfigIssue(
                     severity="error",
-                    message=("未配置任何可用的 AI 模型接入（高级模型路由配置 / 渠道 / API Key），" "AI 分析功能将不可用"),
+                    message=("未配置任何可用的 LLM/AI 模型接入（高级模型路由配置 / 渠道 / API Key），" "AI 分析功能将不可用"),
                     field="LITELLM_CONFIG",
                 )
             )

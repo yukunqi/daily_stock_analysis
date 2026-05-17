@@ -17,6 +17,8 @@ from typing import Any, Dict, List, Optional
 
 from data_provider.base import DataFetcherManager
 from src.config import get_config
+from src.core.market_profile import MarketProfile, get_profile
+from src.core.market_strategy import get_market_strategy_blueprint
 from src.report_language import normalize_report_language
 from src.search_service import SearchService
 from src.services.trend_radar_news_service import get_trend_radar_news_service
@@ -447,8 +449,20 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
             
         except Exception as e:
             logger.error(f"[大盘] 读取 TrendRadar 市场新闻失败: {e}")
+            return self._build_fallback_market_news(overview)
 
-        return self._build_fallback_market_news(overview)
+        deduped_news = []
+        seen_keys = set()
+        for item in all_news:
+            url = (getattr(item, "url", "") or "").strip()
+            title = (getattr(item, "title", "") or "").strip()
+            dedupe_key = f"url:{url}" if url else f"title:{title}"
+            if not dedupe_key or dedupe_key in seen_keys:
+                continue
+            seen_keys.add(dedupe_key)
+            deduped_news.append(item)
+
+        return deduped_news or self._build_fallback_market_news(overview)
 
     def _build_fallback_market_news(self, overview: Optional[MarketOverview]) -> List[Dict[str, str]]:
         """
@@ -714,7 +728,10 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                 f"| Index | Last | Change % | Open | High | Low | Amplitude | Turnover ({self._get_turnover_unit_label()}) |",
                 "|-------|------|----------|------|------|-----|-----------|-----------------|",
             ]
-        else:lines = ["| 指数 | 最新 | 涨跌幅 | 开盘 | 最高 | 最低 | 振幅 |成交额(亿) |", "|------|------|--------|------|------|------|------|-----------|",
+        else:
+            lines = [
+                "| 指数 | 最新 | 涨跌幅 | 开盘 | 最高 | 最低 | 振幅 | 成交额(亿) |",
+                "|------|------|--------|------|------|------|------|-----------|",
             ]
         for idx in overview.indices:
             arrow = self._get_index_change_arrow(idx.change_pct)
@@ -1179,8 +1196,9 @@ Market conditions can change quickly. The data above is for reference only and d
 ---
 *Review Time: {datetime.now().strftime('%H:%M')}*
 """
-        return report
-market_labels = {"cn": "A股", "us": "美股", "hk": "港股"}
+            return report
+
+        market_labels = {"cn": "A股", "us": "美股", "hk": "港股"}
         market_label = market_labels.get(self.region, "A股")
         dashboard_block = self._build_stats_block(overview)
         indices_block = self._build_indices_block(overview)

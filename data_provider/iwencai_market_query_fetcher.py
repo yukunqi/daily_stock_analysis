@@ -618,9 +618,10 @@ def iwencai_fetcher_should_register() -> bool:
     from src.config import get_config
 
     cfg = get_config()
-    if not cfg.iwencai_market_query_enabled:
+    if not getattr(cfg, "iwencai_market_query_enabled", False):
         return False
     if not (os.environ.get("IWENCAI_API_KEY") or "").strip():
         return False
-    path = Path(cfg.iwencai_cli_path) if cfg.iwencai_cli_path else _default_cli_path()
+    cli_path = getattr(cfg, "iwencai_cli_path", None)
+    path = Path(cli_path) if cli_path else _default_cli_path()
     return path.is_file()

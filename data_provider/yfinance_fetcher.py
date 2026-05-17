@@ -180,7 +180,7 @@ class YfinanceFetcher(BaseFetcher):
         3. 处理返回数据
         """
         import yfinance as yf
-_configure_yfinance_cache(yf)
+        _configure_yfinance_cache(yf)
         # 转换代码格式
         yf_code = self._convert_stock_code(stock_code)
 

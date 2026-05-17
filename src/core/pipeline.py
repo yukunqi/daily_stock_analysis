@@ -46,6 +46,7 @@ from src.report_language import (
 )
 from src.search_service import SearchService
 from src.services.social_sentiment_service import SocialSentimentService
+from src.services.trend_radar_news_service import get_trend_radar_news_service
 from src.enums import ReportType
 from src.stock_analyzer import StockTrendAnalyzer, TrendAnalysisResult
 from src.core.trading_calendar import (
@@ -84,6 +85,8 @@ class StockAnalysisPipeline:
         query_source: Optional[str] = None,
         save_context_snapshot: Optional[bool] = None,
         progress_callback: Optional[Callable[[int, str], None]] = None,
+        enable_ai_analysis: bool = True,
+        enable_notifications: bool = True,
     ):
         """
         初始化调度器
@@ -393,9 +396,11 @@ class StockAnalysisPipeline:
                 )
 
             # Step 4: 多维度情报搜索（最新消息+风险排查+业绩预期）
-            news_context = None
+            news_context = self._build_trend_radar_stock_news_context(code, stock_name)
             self._emit_progress(46, f"{stock_name}：正在检索新闻与舆情")
-            if self.search_service is not None and self.search_service.is_available:
+            if news_context:
+                logger.info(f"{stock_name}({code}) 已使用 TrendRadar 本地新闻上下文，跳过主动情报搜索")
+            elif self.search_service is not None and self.search_service.is_available:
                 logger.info(f"{stock_name}({code}) 开始多维度情报搜索...")
 
                 # 使用多维度搜索（最多5次搜索）
@@ -896,29 +901,6 @@ class StockAnalysisPipeline:
                 stabilize_decision_with_structure(result, trend_result, fundamental_context)
 
             resolved_stock_name = result.name if result and result.name else stock_name
-
-            # 保存新闻情报到数据库（Agent 工具结果仅用于 LLM 上下文，未持久化，Fixes #396）
-            # 使用 search_stock_news（与 Agent 工具调用逻辑一致），仅 1 次 API 调用，无额外延迟
-            if self.search_service is not None and self.search_service.is_available:
-                try:
-                    news_response = self.search_service.search_stock_news(
-                        stock_code=code,
-                        stock_name=resolved_stock_name,
-                        max_results=5
-                    )
-                    if news_response.success and news_response.results:
-                        query_context = self._build_query_context(query_id=query_id)
-                        self.db.save_news_intel(
-                            code=code,
-                            name=resolved_stock_name,
-                            dimension="latest_news",
-                            query=news_response.query,
-                            response=news_response,
-                            query_context=query_context
-                        )
-                        logger.info(f"[{code}] Agent 模式: 新闻情报已保存 {len(news_response.results)} 条")
-                except Exception as e:
-                    logger.warning(f"[{code}] Agent 模式保存新闻情报失败: {e}")
 
             # 保存分析历史记录
             if result and result.success:
