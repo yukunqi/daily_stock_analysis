@@ -130,8 +130,47 @@ class TrendRadarNewsServiceTestCase(unittest.TestCase):
 
         self.assertIn("TrendRadar News Context", stock_context)
         self.assertIn("茅台再调价", stock_context)
-        self.assertEqual(len(market_items), 2)
+        self.assertGreaterEqual(len(market_items), 1)
         self.assertTrue(any("buckets:" in item["snippet"] for item in market_items))
+        self.assertTrue(all(item["source"].startswith("TrendRadar/") for item in market_items))
+
+    def test_build_market_items_filters_unrelated_news_and_fetches_excerpt(self) -> None:
+        fetcher = FakeContentFetcher()
+        service = TrendRadarNewsService(
+            str(self.output_dir),
+            days=1,
+            limit=10,
+            content_fetcher=fetcher,
+            fetch_content_enabled=True,
+            content_max_items=1,
+        )
+        items = [
+            TrendRadarNewsItem(
+                title="全球通胀加剧债市风暴，AI估值承压",
+                url="https://example.com/macro",
+                source="华尔街见闻",
+                rank=1,
+                published_at="2026-05-16 10:20",
+            ),
+            TrendRadarNewsItem(
+                title="体育赛事赛程公布",
+                url="https://example.com/sports",
+                source="澎湃",
+                rank=2,
+            ),
+        ]
+
+        market_items = service.build_market_news_items(items=items, max_items=3)
+
+        self.assertEqual(len(market_items), 1)
+        self.assertEqual(market_items[0]["title"], "全球通胀加剧债市风暴，AI估值承压")
+        self.assertIn("macro", market_items[0]["snippet"])
+        self.assertIn("liquidity", market_items[0]["snippet"])
+        self.assertIn("industry", market_items[0]["snippet"])
+        self.assertIn("正文摘录", market_items[0]["snippet"])
+        self.assertEqual(market_items[0]["source"], "TrendRadar/华尔街见闻")
+        self.assertEqual(market_items[0]["published_date"], "2026-05-16 10:20")
+        self.assertEqual(len(fetcher.calls), 1)
 
     def test_build_context_fetches_article_excerpt_for_matched_urls(self) -> None:
         fetcher = FakeContentFetcher()

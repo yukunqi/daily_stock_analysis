@@ -117,6 +117,87 @@ class FinanceNewsLiveIntegrationTestCase(unittest.TestCase):
 class MarketNewsDedupRegressionTestCase(unittest.TestCase):
     """Regression coverage for market-news deduplication without live network calls."""
 
+    def test_market_analyzer_uses_trend_radar_market_news_without_active_search(self) -> None:
+        """TrendRadar realtime news should be added without changing existing market-data fetches."""
+        trend_news = [
+            {
+                "title": "美债收益率上行压制全球风险偏好",
+                "snippet": "buckets: liquidity, sentiment; 正文摘录: 长端利率上行，成长股估值承压。",
+                "url": "https://example.com/macro",
+                "source": "TrendRadar/华尔街见闻",
+                "published_date": "2026-05-18 10:20",
+                "origin": "trendradar",
+            }
+        ]
+        fake_search_service = SimpleNamespace(search_stock_news=MagicMock())
+        analyzer = MarketAnalyzer(search_service=fake_search_service)
+        analyzer.trend_radar_news_service = SimpleNamespace(
+            build_market_news_items=MagicMock(return_value=trend_news)
+        )
+        analyzer.profile = SimpleNamespace(news_queries=["A股 市场"])
+
+        news = analyzer.search_market_news()
+
+        self.assertEqual(news, trend_news)
+        analyzer.trend_radar_news_service.build_market_news_items.assert_called_once_with(max_items=8)
+        fake_search_service.search_stock_news.assert_not_called()
+
+    def test_market_analyzer_falls_back_to_active_search_when_trend_radar_empty(self) -> None:
+        """Empty TrendRadar market news should not block the existing active-search path."""
+        active_news = SearchResult(
+            title="A股市场热点扩散",
+            snippet="市场热点扩散。",
+            url="https://example.com/news/1",
+            source="RSSHub",
+        )
+        fake_search_service = SimpleNamespace(
+            search_stock_news=MagicMock(
+                return_value=SearchResponse(
+                    query="query-1",
+                    results=[active_news],
+                    provider="RSSHubFinance",
+                )
+            )
+        )
+        analyzer = MarketAnalyzer(search_service=fake_search_service)
+        analyzer.trend_radar_news_service = SimpleNamespace(
+            build_market_news_items=MagicMock(return_value=[])
+        )
+        analyzer.profile = SimpleNamespace(news_queries=["A股 市场"])
+
+        news = analyzer.search_market_news()
+
+        self.assertEqual(news, [active_news])
+        fake_search_service.search_stock_news.assert_called_once()
+
+    def test_market_analyzer_falls_back_to_active_search_when_trend_radar_fails(self) -> None:
+        """TrendRadar read failures should not break the existing market-news path."""
+        active_news = SearchResult(
+            title="A股市场热点扩散",
+            snippet="市场热点扩散。",
+            url="https://example.com/news/1",
+            source="RSSHub",
+        )
+        fake_search_service = SimpleNamespace(
+            search_stock_news=MagicMock(
+                return_value=SearchResponse(
+                    query="query-1",
+                    results=[active_news],
+                    provider="RSSHubFinance",
+                )
+            )
+        )
+        analyzer = MarketAnalyzer(search_service=fake_search_service)
+        analyzer.trend_radar_news_service = SimpleNamespace(
+            build_market_news_items=MagicMock(side_effect=RuntimeError("bad db"))
+        )
+        analyzer.profile = SimpleNamespace(news_queries=["A股 市场"])
+
+        news = analyzer.search_market_news()
+
+        self.assertEqual(news, [active_news])
+        fake_search_service.search_stock_news.assert_called_once()
+
     def test_market_analyzer_search_market_news_deduplicates_by_url_or_title(self) -> None:
         """MarketAnalyzer.search_market_news should drop repeated URL/title entries across feed queries."""
         duplicated_by_url = SearchResult(
@@ -161,6 +242,7 @@ class MarketNewsDedupRegressionTestCase(unittest.TestCase):
             )
         )
         analyzer = MarketAnalyzer(search_service=fake_search_service)
+        analyzer.trend_radar_news_service = None
         analyzer.profile = SimpleNamespace(news_queries=["A股 市场", "财经 新闻"])
 
         news = analyzer.search_market_news()

@@ -68,6 +68,17 @@ def _fixture_content(case_id: str, message: str, request_context: Dict[str, Any]
             "下一步：保存复盘记录并在下个交易日开盘后重新检查。"
         )
 
+    if case_id == "market_trendradar_realtime_news":
+        return (
+            "大盘复盘结论：今日市场在 TrendRadar 实时热点新闻与盘面数据共同作用下呈震荡偏谨慎。\n"
+            "TrendRadar 实时新闻：美债收益率上行压制全球风险偏好；正文摘录显示长端利率上行，"
+            "成长股估值承压。\n"
+            "盘面数据：上涨 3200 家、下跌 1800 家、成交额 14567 亿元。\n"
+            "板块主线：领涨板块为 AI算力，领跌板块为煤炭。\n"
+            "后续展望：若成交额继续放大且 AI算力保持强势，可维持均衡观察；风险提示是流动性扰动"
+            "可能压制高估值方向。"
+        )
+
     return f"收到请求：{message}"
 
 

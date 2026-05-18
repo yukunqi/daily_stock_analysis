@@ -71,3 +71,14 @@ tests:
         value: |
           required = ["结论", "行动项", "风险", "下一步"]
           return all(term in output for term in required)
+
+  - description: market review - uses TrendRadar realtime news with market data
+    vars:
+      case_id: market_trendradar_realtime_news
+      message: "生成今天大盘复盘，结合 TrendRadar 实时新闻、涨跌家数、成交额和领涨领跌板块"
+    assert:
+      - type: python
+        value: |
+          required = ["TrendRadar 实时新闻", "正文摘录", "上涨 3200", "成交额 14567", "AI算力", "煤炭", "后续展望", "风险提示"]
+          forbidden = ["暂无相关新闻", "不提供展望"]
+          return all(term in output for term in required) and not any(term in output for term in forbidden)

@@ -81,13 +81,13 @@ class TrendRadarNewsService:
     }
 
     MACRO_BUCKETS: Dict[str, Tuple[str, ...]] = {
-        "macro": ("通胀", "CPI", "PPI", "PMI", "经济", "衰退", "增长"),
-        "policy": ("政策", "国常会", "商务部", "监管", "央行", "财政", "关税", "中美"),
-        "liquidity": ("美联储", "利率", "降息", "加息", "收益率", "美债", "流动性"),
+        "macro": ("通胀", "CPI", "PPI", "PMI", "经济", "衰退", "增长", "消费", "投资", "出口"),
+        "policy": ("政策", "国常会", "商务部", "监管", "央行", "财政", "关税", "中美", "证监会", "发改委"),
+        "liquidity": ("美联储", "利率", "降息", "加息", "收益率", "美债", "流动性", "债市", "汇率", "人民币"),
         "geopolitical": ("冲突", "战争", "制裁", "中东", "伊朗", "俄罗斯", "地缘"),
-        "industry": ("AI", "芯片", "半导体", "算力", "光模块", "新能源", "汽车", "白酒"),
-        "commodity": ("原油", "石油", "黄金", "铜", "金属", "大宗"),
-        "sentiment": ("美股", "A股", "私募", "基金", "IPO", "调仓", "风险偏好"),
+        "industry": ("AI", "芯片", "半导体", "算力", "光模块", "新能源", "汽车", "白酒", "机器人", "光伏"),
+        "commodity": ("原油", "石油", "黄金", "铜", "金属", "大宗", "煤炭", "有色"),
+        "sentiment": ("美股", "A股", "港股", "股市", "市场", "指数", "私募", "基金", "IPO", "调仓", "风险偏好"),
     }
 
     def __init__(
@@ -211,6 +211,8 @@ class TrendRadarNewsService:
         scored: List[Tuple[int, TrendRadarNewsItem, List[str]]] = []
         for item in source_items:
             buckets = self._macro_buckets_for_item(item)
+            if not buckets:
+                continue
             score = len(buckets) * 10
             if item.rank is not None:
                 score += max(0, 20 - item.rank)
@@ -218,7 +220,8 @@ class TrendRadarNewsService:
 
         scored.sort(key=lambda row: row[0], reverse=True)
         result: List[Dict[str, str]] = []
-        for _, item, buckets in scored[:max_items]:
+        excerpt_count = 0
+        for idx, (_, item, buckets) in enumerate(scored[:max_items], 1):
             snippet_parts = []
             if buckets:
                 snippet_parts.append(f"buckets: {', '.join(buckets)}")
@@ -226,14 +229,26 @@ class TrendRadarNewsService:
                 snippet_parts.append(f"source: {item.source}")
             if item.rank is not None:
                 snippet_parts.append(f"rank: {item.rank}")
+            excerpt = self._fetch_content_excerpt(item, idx)
+            if excerpt:
+                excerpt_count += 1
+                snippet_parts.append(f"正文摘录: {excerpt}")
             result.append(
                 {
                     "title": item.title,
                     "snippet": "; ".join(snippet_parts),
                     "url": item.url,
-                    "source": item.source,
+                    "source": f"TrendRadar/{item.source}" if item.source else "TrendRadar",
+                    "published_date": item.published_at or "",
+                    "origin": item.origin,
                 }
             )
+        logger.info(
+            "[TrendRadar] market news classified: total=%s, selected=%s, excerpts=%s",
+            len(source_items),
+            len(result),
+            excerpt_count,
+        )
         return result
 
     def diagnostics(self, reference_date: Optional[date] = None) -> Dict[str, object]:

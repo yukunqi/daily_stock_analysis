@@ -960,6 +960,51 @@ class TestMarketAnalyzerBypassFix:
         assert kwargs["max_tokens"] == 8192
         assert kwargs["temperature"] == 0.7
 
+    def test_review_prompt_includes_trend_radar_news_with_market_data(self):
+        """Market review prompt should add TrendRadar realtime news without replacing market data."""
+        from src.market_analyzer import MarketOverview, MarketIndex
+
+        ma = self._make_market_analyzer_with_mock_generate_text(return_value="复盘结果")
+        overview = MarketOverview(
+            date="2026-05-18",
+            indices=[
+                MarketIndex(
+                    code="000001",
+                    name="上证指数",
+                    current=3300.0,
+                    change=12.0,
+                    change_pct=0.36,
+                )
+            ],
+            up_count=3200,
+            down_count=1800,
+            flat_count=100,
+            limit_up_count=88,
+            limit_down_count=5,
+            total_amount=14567.0,
+            top_sectors=[{"name": "AI算力", "change_pct": 3.25}],
+            bottom_sectors=[{"name": "煤炭", "change_pct": -1.12}],
+        )
+        news = [
+            {
+                "title": "美债收益率上行压制全球风险偏好",
+                "snippet": "buckets: liquidity, sentiment; 正文摘录: 长端利率上行，成长股估值承压。",
+                "url": "https://example.com/macro",
+                "source": "TrendRadar/华尔街见闻",
+                "published_date": "2026-05-18 10:20",
+            }
+        ]
+
+        prompt = ma._build_review_prompt(overview, news)
+
+        assert "上证指数: 3300.00" in prompt
+        assert "上涨: 3200 家 | 下跌: 1800 家 | 平盘: 100 家" in prompt
+        assert "领涨: AI算力(+3.25%)" in prompt
+        assert "领跌: 煤炭(-1.12%)" in prompt
+        assert "TrendRadar/华尔街见闻" in prompt
+        assert "美债收益率上行压制全球风险偏好" in prompt
+        assert "正文摘录" in prompt
+
     def test_generate_template_review_uses_english_shell_for_cn_when_report_language_is_en(self):
         from src.market_analyzer import MarketOverview, MarketIndex
 

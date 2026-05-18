@@ -419,6 +419,16 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         Returns:
             新闻列表
         """
+        if self.trend_radar_news_service:
+            try:
+                trend_news = self.trend_radar_news_service.build_market_news_items(max_items=8)
+                if trend_news:
+                    logger.info("[大盘] 已使用 TrendRadar 实时新闻: 选入 %d 条", len(trend_news))
+                    return trend_news
+                logger.info("[大盘] TrendRadar 未筛选到市场相关新闻，继续尝试主动新闻搜索")
+            except Exception as e:
+                logger.warning("[大盘] 读取 TrendRadar 实时新闻失败，继续尝试主动新闻搜索: %s", e)
+
         if not self.search_service:
             logger.warning("[大盘] 搜索服务未配置，跳过新闻搜索")
             return []
@@ -448,7 +458,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
             logger.info(f"[大盘] 共获取 {len(all_news)} 条市场新闻")
             
         except Exception as e:
-            logger.error(f"[大盘] 读取 TrendRadar 市场新闻失败: {e}")
+            logger.error(f"[大盘] 搜索市场新闻失败: {e}")
             return self._build_fallback_market_news(overview)
 
         deduped_news = []
