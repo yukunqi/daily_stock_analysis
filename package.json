@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "scripts": {
+    "evals": "PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_PYTHON=.venv/bin/python promptfoo eval -c evals/promptfoo/promptfooconfig.yaml --no-progress-bar"
+  },
+  "devDependencies": {
+    "promptfoo": "^0.121.11"
+  }
+}
