@@ -94,6 +94,23 @@ def test_daily_analysis_keeps_channel_secrets_in_secrets_context() -> None:
             assert f"secrets.{key}" in env[key]
 
 
+def test_daily_analysis_defaults_legacy_key_mode_to_deepseek() -> None:
+    workflow_content = WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    assert 'export LITELLM_MODEL="deepseek/deepseek-v4-flash"' in workflow_content
+    assert "[ -z \"$LLM_CHANNELS\" ]" in workflow_content
+    assert "[ -n \"$DEEPSEEK_API_KEY\" ] || [ -n \"$DEEPSEEK_API_KEYS\" ]" in workflow_content
+
+
+def test_daily_analysis_does_not_default_fallback_to_gemini() -> None:
+    env = _load_daily_analysis_env()
+
+    fallback = env["LITELLM_FALLBACK_MODELS"]
+    assert "vars.LITELLM_FALLBACK_MODELS" in fallback
+    assert "secrets.LITELLM_FALLBACK_MODELS" in fallback
+    assert "gemini/" not in fallback.lower()
+
+
 def test_env_example_includes_provider_template_channel_examples() -> None:
     templates = _extract_provider_templates()
     env_example = ENV_EXAMPLE_PATH.read_text(encoding="utf-8")

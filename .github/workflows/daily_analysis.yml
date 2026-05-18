@@ -78,8 +78,8 @@ jobs:
           VISION_PROVIDER_PRIORITY: ${{ vars.VISION_PROVIDER_PRIORITY || secrets.VISION_PROVIDER_PRIORITY }}
           LLM_TEMPERATURE: ${{ vars.LLM_TEMPERATURE || secrets.LLM_TEMPERATURE }}
           LLM_CHANNELS: ${{ vars.LLM_CHANNELS || secrets.LLM_CHANNELS }}
-          # 【备选模型】当 DeepSeek 不可用时，使用 Gemini
-          LITELLM_FALLBACK_MODELS: gemini/gemini-2.0-flash
+          # 备选模型：默认不回落到 Gemini，避免云端免费额度限流；需要跨 provider fallback 时显式配置
+          LITELLM_FALLBACK_MODELS: ${{ vars.LITELLM_FALLBACK_MODELS || secrets.LITELLM_FALLBACK_MODELS || '' }}
 
           # Gemini 配置（备选）
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -368,6 +368,12 @@ jobs:
             echo "✅ LITELLM 配置文件已写入: $LITELLM_CONFIG"
           fi
 
+          # GitHub Actions legacy key 模式：同时配置 Gemini 与 DeepSeek 时，显式优先使用 DeepSeek。
+          if [ -z "$LITELLM_CONFIG" ] && [ -z "$LLM_CHANNELS" ] && [ -z "$LITELLM_MODEL" ] && { [ -n "$DEEPSEEK_API_KEY" ] || [ -n "$DEEPSEEK_API_KEYS" ]; }; then
+            export LITELLM_MODEL="deepseek/deepseek-v4-flash"
+            echo "🤖 未显式配置 LITELLM_MODEL/LLM_CHANNELS，检测到 DeepSeek Key，默认使用 DeepSeek: $LITELLM_MODEL"
+          fi
+
           # 判断运行模式
           MODE="${{ github.event.inputs.mode || 'auto' }}"
           
@@ -401,13 +407,13 @@ jobs:
           echo "📋 配置检查"
           echo "=========================================="
           echo "【AI 配置】"
-          if [ -n "$LITELLM_CONFIG" ] || [ -n "$LITELLM_API_KEY" ] || [ -n "$LITELLM_MODEL" ] || [ -n "$ANSPIRE_API_KEYS" ]; then
+          if [ -n "$LITELLM_CONFIG" ] || [ -n "$LITELLM_API_KEY" ] || [ -n "$LITELLM_MODEL" ] || [ -n "$LLM_CHANNELS" ] || [ -n "$ANSPIRE_API_KEYS" ]; then
             echo "  LiteLLM: ✅ 已配置"
           else
             echo "  LiteLLM: ❌ 未配置"
           fi
-          echo "  Gemini API Key: $([ -n "$GEMINI_API_KEY" ] && echo '✅ 已配置' || echo '❌ 未配置')"
-          echo "  DeepSeek Key:   $([ -n "$DEEPSEEK_API_KEY" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
+          echo "  Gemini API Key: $(if [ -n "$GEMINI_API_KEY" ] || [ -n "$GEMINI_API_KEYS" ]; then echo '✅ 已配置'; else echo '❌ 未配置'; fi)"
+          echo "  DeepSeek Key:   $(if [ -n "$DEEPSEEK_API_KEY" ] || [ -n "$DEEPSEEK_API_KEYS" ]; then echo '✅ 已配置'; else echo '⚪ 未配置'; fi)"
           echo "  Anspire Key:    $([ -n "$ANSPIRE_API_KEYS" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
           echo "  AIHubMix Key:   $([ -n "$AIHUBMIX_KEY" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
           echo "  OpenAI API Key: $([ -n "$OPENAI_API_KEY" ] && echo '✅ 已配置' || echo '⚪ 未配置')"
@@ -493,4 +499,3 @@ jobs:
             echo "📜 最近日志（最后 30 行）:"
             tail -30 logs/stock_analysis_*.log 2>/dev/null || echo "无日志"
           fi
-
