@@ -7,6 +7,8 @@ import json
 import os
 import sys
 import unittest
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 from unittest.mock import MagicMock, patch
 
 # Mock newspaper before search_service import (optional dependency).
@@ -26,6 +28,7 @@ class FinanceNewsProvidersTestCase(unittest.TestCase):
     @patch("src.search_service.requests.post")
     def test_eastmoney_news_provider_parses_nested_llm_response(self, mock_post: MagicMock) -> None:
         """EastmoneyNews should parse nested llmSearchResponse articles."""
+        recent_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d 09:30:00")
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
@@ -38,14 +41,14 @@ class FinanceNewsProvidersTestCase(unittest.TestCase):
                                 {
                                     "title": "寒武纪:2026年第一季度报告",
                                     "content": "公告内容不应进入新闻流。",
-                                    "date": "2026-05-16 09:31:00",
+                                    "date": recent_date,
                                     "informationType": "NOTICE",
                                     "jumpUrl": "https://example.com/notice/1",
                                 },
                                 {
                                     "title": "寒武纪受益国产 AI 芯片需求",
                                     "content": "国产 GPU 需求升温，寒武纪思元产品受到市场关注。",
-                                    "date": "2026-05-16 09:30:00",
+                                    "date": recent_date,
                                     "informationType": "INV_NEWS",
                                     "source": "测试财经",
                                     "jumpUrl": "https://example.com/news/1",
@@ -81,6 +84,10 @@ class FinanceNewsProvidersTestCase(unittest.TestCase):
     @patch("src.search_service.requests.get")
     def test_rsshub_finance_provider_filters_feed_items_by_stock_query(self, mock_get: MagicMock) -> None:
         """RSSHubFinance should fetch configured routes and match stock-specific items."""
+        recent_pub_date = format_datetime(
+            datetime.now(timezone.utc) - timedelta(days=1),
+            usegmt=True,
+        )
         feed_xml = """<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
@@ -88,7 +95,7 @@ class FinanceNewsProvidersTestCase(unittest.TestCase):
       <title>寒武纪产业链订单预期升温</title>
       <description>AI 芯片国产替代继续受到市场关注。</description>
       <link>https://example.com/rss/1</link>
-      <pubDate>Sat, 16 May 2026 09:00:00 GMT</pubDate>
+      <pubDate>{recent_pub_date}</pubDate>
       <source>财联社</source>
     </item>
     <item>
@@ -100,7 +107,7 @@ class FinanceNewsProvidersTestCase(unittest.TestCase):
     </item>
   </channel>
 </rss>
-"""
+""".format(recent_pub_date=recent_pub_date)
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.text = feed_xml

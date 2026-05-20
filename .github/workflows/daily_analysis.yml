@@ -7,6 +7,8 @@ on:
     - cron: '30 0 * * 1-5'     # 周一到周五 UTC 00:30
     # 大盘复盘：每天北京时间 16:00 (UTC 08:00)
     - cron: '0 8 * * 1-5'      # 周一到周五 UTC 08:00
+    # 明日机会分析：每天北京时间 20:00 (UTC 12:00)
+    - cron: '0 12 * * 1-5'     # 周一到周五 UTC 12:00
 
   # 手动触发
   workflow_dispatch:
@@ -21,6 +23,7 @@ on:
           - full          # 完整分析（股票+大盘）
           - market-only   # 仅大盘复盘
           - stocks-only   # 仅股票分析
+          - opportunity-only # 仅明日机会分析
       force_run:
         description: '强制运行（跳过交易日检查）'
         required: false
@@ -380,6 +383,7 @@ jobs:
           # 如果是定时触发，根据当前 UTC 时间自动判断运行模式
           # UTC 00:30 (北京时间 08:30) -> 个股分析
           # UTC 08:00 (北京时间 16:00) -> 大盘复盘
+          # UTC 12:00 (北京时间 20:00) -> 明日机会分析
           if [ "$MODE" = "auto" ]; then
             CURRENT_HOUR=$(date -u '+%H')
             CURRENT_MIN=$(date -u '+%M')
@@ -389,6 +393,9 @@ jobs:
             if [ "$CURRENT_HOUR" = "08" ]; then
               MODE="market-only"
               echo "⏰ 检测到 UTC 08:00，自动切换为大盘复盘模式"
+            elif [ "$CURRENT_HOUR" = "12" ]; then
+              MODE="opportunity-only"
+              echo "⏰ 检测到 UTC 12:00，自动切换为明日机会分析模式"
             else
               MODE="stocks-only"
               echo "⏰ 检测到 UTC ${CURRENT_HOUR}:${CURRENT_MIN}，自动切换为个股分析模式"
@@ -465,6 +472,8 @@ jobs:
           # 执行分析
           if [ "$MODE" = "market-only" ]; then
             python main.py --market-review $FORCE_RUN_ARG
+          elif [ "$MODE" = "opportunity-only" ]; then
+            python main.py --opportunity-report $FORCE_RUN_ARG
           elif [ "$MODE" = "stocks-only" ]; then
             python main.py --no-market-review $FORCE_RUN_ARG
           else

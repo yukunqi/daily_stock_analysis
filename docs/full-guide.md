@@ -382,6 +382,8 @@ daily_stock_analysis/
 | `MARKET_REVIEW_ENABLED` | 启用大盘复盘 | `true` |
 | `MARKET_REVIEW_REGION` | 大盘复盘市场区域：cn(A股)、hk(港股)、us(美股)、both(三市场)，us 适合仅关注美股的用户 | `cn` |
 | `MARKET_REVIEW_COLOR_SCHEME` | 大盘复盘指数涨跌颜色：`green_up`=绿涨红跌（默认），`red_up`=红涨绿跌 | `green_up` |
+| `OPPORTUNITY_REPORT_ENABLED` | 启用晚间“明日投资机会”报告；复用当日新闻、大盘复盘、板块/概念、人气股和涨停池数据 | `false` |
+| `OPPORTUNITY_REPORT_SCHEDULE_TIME` | 明日机会报告定时触发时间，建议设为盘后复盘之后，例如晚上 20:00 | `20:00` |
 | `TRADING_DAY_CHECK_ENABLED` | 交易日检查：默认 `true`，非交易日跳过执行；设为 `false` 或使用 `--force-run` 可强制执行（Issue #373） | `true` |
 | `SCHEDULE_ENABLED` | 启用定时任务 | `false` |
 | `SCHEDULE_TIME` | 定时执行时间 | `18:00` |
@@ -579,6 +581,7 @@ pip install -r requirements.txt
 ```bash
 python main.py                        # 完整分析（个股 + 大盘复盘）
 python main.py --market-review        # 仅大盘复盘
+python main.py --opportunity-report   # 仅生成明日投资机会报告
 python main.py --no-market-review     # 仅个股分析
 python main.py --stocks 600519,300750 # 指定股票
 python main.py --dry-run              # 仅获取数据，不 AI 分析

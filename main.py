@@ -243,6 +243,7 @@ def parse_arguments() -> argparse.Namespace:
   python main.py --single-notify    # 启用单股推送模式（每分析完一只立即推送）
   python main.py --schedule         # 启用定时任务模式
   python main.py --market-review    # 仅运行大盘复盘
+  python main.py --opportunity-report  # 仅运行明日机会分析
         '''
     )
 
@@ -305,6 +306,12 @@ def parse_arguments() -> argparse.Namespace:
         '--market-review',
         action='store_true',
         help='仅运行大盘复盘分析'
+    )
+
+    parser.add_argument(
+        '--opportunity-report',
+        action='store_true',
+        help='仅运行晚间明日投资机会分析'
     )
 
     parser.add_argument(
@@ -772,6 +779,7 @@ def _is_explicit_one_shot_run(args: argparse.Namespace) -> bool:
 
     one_shot_flags = (
         "market_review",
+        "opportunity_report",
         "backtest",
         "dry_run",
         "no_notify",
@@ -957,6 +965,21 @@ def main() -> int:
             )
             return 0
 
+        # 模式1.5: 仅明日机会报告
+        if getattr(args, 'opportunity_report', False):
+            from src.core.market_review_runtime import build_market_review_runtime
+            from src.core.opportunity_report import run_opportunity_report
+
+            logger.info("模式: 仅明日机会分析")
+            notifier, analyzer, search_service = build_market_review_runtime(config)
+            run_opportunity_report(
+                notifier=notifier,
+                analyzer=analyzer,
+                search_service=search_service,
+                send_notification=not args.no_notify,
+            )
+            return 0
+
         # 模式2: 定时任务模式
         if args.schedule or (config.schedule_enabled and not explicit_one_shot_run):
             logger.info("模式: 定时任务")
@@ -970,19 +993,23 @@ def main() -> int:
 
             # Check if separate market review schedule is configured
             market_review_time = getattr(config, 'market_review_schedule_time', None)
+            opportunity_report_enabled = getattr(config, 'opportunity_report_enabled', False)
+            opportunity_report_time = getattr(config, 'opportunity_report_schedule_time', '20:00') or '20:00'
             stock_time = config.schedule_time
 
-            if market_review_time and config.market_review_enabled:
-                # Use multi-scheduler for separate stock and market review times
+            if (market_review_time and config.market_review_enabled) or opportunity_report_enabled:
+                # Use multi-scheduler for separate stock, market review, and opportunity report times.
                 logger.info(f"个股分析定时: {stock_time}")
-                logger.info(f"大盘复盘定时: {market_review_time}")
+                if market_review_time and config.market_review_enabled:
+                    logger.info(f"大盘复盘定时: {market_review_time}")
+                if opportunity_report_enabled:
+                    logger.info(f"明日机会分析定时: {opportunity_report_time}")
                 logger.info(f"启动时立即执行: {should_run_immediately}")
 
                 from src.scheduler import run_with_multi_schedule
                 from src.core.market_review import run_market_review
-                from src.notification import NotificationService
-                from src.search_service import SearchService
-                from src.analyzer import GeminiAnalyzer
+                from src.core.market_review_runtime import build_market_review_runtime
+                from src.core.opportunity_report import run_opportunity_report
 
                 def stock_analysis_task():
                     """个股分析任务"""
@@ -1000,20 +1027,7 @@ def main() -> int:
                     """大盘复盘任务"""
                     logger.info("[大盘复盘] 开始执行...")
                     try:
-                        # Initialize required services
-                        notifier = NotificationService()
-                        search_service = SearchService()
-
-                        # Initialize analyzer if API keys are available
-                        analyzer = None
-                        if config.litellm_model or config.gemini_api_keys or config.openai_api_keys:
-                            try:
-                                analyzer = GeminiAnalyzer()
-                                if not analyzer.is_available():
-                                    logger.warning("AI 分析器初始化后不可用，改用模板生成大盘复盘")
-                                    analyzer = None
-                            except Exception as e:
-                                logger.warning(f"Analyzer initialization failed: {e}")
+                        notifier, analyzer, search_service = build_market_review_runtime(config)
 
                         # Check trading day
                         effective_region = None
@@ -1038,14 +1052,33 @@ def main() -> int:
                         logger.exception(f"[大盘复盘] 执行失败: {e}")
                     logger.info("[大盘复盘] 执行完成")
 
+                def opportunity_report_task():
+                    """明日机会分析任务"""
+                    logger.info("[明日机会] 开始执行...")
+                    try:
+                        notifier, analyzer, search_service = build_market_review_runtime(config)
+                        run_opportunity_report(
+                            notifier=notifier,
+                            analyzer=analyzer,
+                            search_service=search_service,
+                            send_notification=not getattr(args, 'no_notify', False),
+                        )
+                    except Exception as e:
+                        logger.exception(f"[明日机会] 执行失败: {e}")
+                    logger.info("[明日机会] 执行完成")
+
                 tasks = {
                     'stock': (stock_analysis_task, stock_time),
-                    'market': (market_review_task, market_review_time),
                 }
                 run_immediately_map = {
                     'stock': should_run_immediately,
-                    'market': should_run_immediately,
                 }
+                if market_review_time and config.market_review_enabled:
+                    tasks['market'] = (market_review_task, market_review_time)
+                    run_immediately_map['market'] = should_run_immediately
+                if opportunity_report_enabled:
+                    tasks['opportunity'] = (opportunity_report_task, opportunity_report_time)
+                    run_immediately_map['opportunity'] = should_run_immediately
 
                 run_with_multi_schedule(tasks, run_immediately_map)
             else:

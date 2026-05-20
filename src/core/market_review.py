@@ -123,6 +123,10 @@ def run_market_review(
             review_report = market_analyzer.run_daily_review()
         
         if review_report:
+            opportunity_performance = _build_opportunity_performance_block()
+            if opportunity_performance:
+                review_report = f"{review_report.rstrip()}\n\n{opportunity_performance}"
+
             # 保存报告到文件
             date_str = datetime.now().strftime('%Y%m%d')
             report_filename = f"market_review_{date_str}.md"
@@ -230,3 +234,14 @@ def _summarize_market_review(review_report: str, report_language: str) -> str:
         if text and not text.startswith("---") and not text.startswith(">"):
             return text[:200]
     return "Market review report generated." if report_language == "en" else "大盘复盘报告已生成。"
+
+
+def _build_opportunity_performance_block() -> Optional[str]:
+    """Return the prior opportunity performance block when available."""
+    try:
+        from src.core.opportunity_report import get_latest_opportunity_performance_markdown
+
+        return get_latest_opportunity_performance_markdown()
+    except Exception as exc:
+        logger.warning("读取前一晚机会表现失败，继续生成大盘复盘: %s", exc, exc_info=True)
+        return None

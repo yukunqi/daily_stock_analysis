@@ -338,6 +338,8 @@ For the notification baseline, diagnostics, and deployment notes, see [Notificat
 | `MARKET_REVIEW_ENABLED` | Enable market review | `true` |
 | `MARKET_REVIEW_REGION` | Market review region: cn (A-shares), hk (HK stocks), us (US stocks), both (all three markets) | `cn` |
 | `MARKET_REVIEW_COLOR_SCHEME` | Index change color style in market reviews: `green_up` = green gains/red losses (default), `red_up` = red gains/green losses | `green_up` |
+| `OPPORTUNITY_REPORT_ENABLED` | Enable the nightly next-session opportunity report; it reuses same-day news, market review, sector/concept, hot-stock, and limit-up data | `false` |
+| `OPPORTUNITY_REPORT_SCHEDULE_TIME` | Daily trigger time for the opportunity report, recommended after market review, for example 20:00 | `20:00` |
 | `SCHEDULE_ENABLED` | Enable scheduled tasks | `false` |
 | `SCHEDULE_TIME` | Scheduled execution time | `18:00` |
 | `SCHEDULE_RUN_IMMEDIATELY` | Run once immediately when scheduler mode starts; when unset it keeps following the legacy `RUN_IMMEDIATELY` runtime override | `true` |
@@ -542,6 +544,7 @@ pip install -r requirements.txt
 ```bash
 python main.py                        # Full analysis (stocks + market review)
 python main.py --market-review        # Market review only
+python main.py --opportunity-report   # Next-session opportunity report only
 python main.py --no-market-review     # Stock analysis only
 python main.py --stocks 600519,300750 # Specify stocks
 python main.py --dry-run              # Fetch data only, no AI analysis
