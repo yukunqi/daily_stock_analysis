@@ -156,6 +156,9 @@ class AnalyzerNewsPromptTestCase(unittest.TestCase):
             prompt = analyzer._format_prompt(context, "贵州茅台", news_context="news")
 
         self.assertIn("近7日的新闻搜索结果", prompt)
+        self.assertIn("news_decision_impact", prompt)
+        self.assertIn("新闻对决策的影响", prompt)
+        self.assertIn("未改变操作建议/直接催化有限", prompt)
         self.assertIn("每一条都必须带具体日期（YYYY-MM-DD）", prompt)
         self.assertIn("超出近7日窗口的新闻一律忽略", prompt)
         self.assertIn("时间未知、无法确定发布日期的新闻一律忽略", prompt)

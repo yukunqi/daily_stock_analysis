@@ -47,6 +47,14 @@ jobs:
       
       - name: 检出代码
         uses: actions/checkout@v5
+
+      - name: 检出 TrendRadar 输出（可选）
+        if: ${{ vars.TREND_RADAR_REPOSITORY != '' }}
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ vars.TREND_RADAR_REPOSITORY }}
+          path: trendradar-source
+          token: ${{ secrets.TREND_RADAR_REPOSITORY_TOKEN || github.token }}
       
       - name: 设置 Python 环境
         uses: actions/setup-python@v6
@@ -270,6 +278,20 @@ jobs:
           SEARXNG_BASE_URLS: ${{ secrets.SEARXNG_BASE_URLS }}
           SEARXNG_PUBLIC_INSTANCES_ENABLED: ${{ vars.SEARXNG_PUBLIC_INSTANCES_ENABLED || secrets.SEARXNG_PUBLIC_INSTANCES_ENABLED }}
 
+          # TrendRadar 被动新闻（可选）
+          # GitHub Actions 不会读取本地 .env；需在 Repository Variables/Secrets 中显式配置。
+          # 若设置 TREND_RADAR_REPOSITORY，workflow 会把该仓库检出到 ./trendradar-source。
+          TREND_RADAR_NEWS_ENABLED: ${{ vars.TREND_RADAR_NEWS_ENABLED || secrets.TREND_RADAR_NEWS_ENABLED || 'false' }}
+          TREND_RADAR_OUTPUT_DIR: ${{ vars.TREND_RADAR_OUTPUT_DIR || secrets.TREND_RADAR_OUTPUT_DIR || './trendradar-source/output' }}
+          TREND_RADAR_NEWS_DAYS: ${{ vars.TREND_RADAR_NEWS_DAYS || secrets.TREND_RADAR_NEWS_DAYS || '1' }}
+          TREND_RADAR_NEWS_LIMIT: ${{ vars.TREND_RADAR_NEWS_LIMIT || secrets.TREND_RADAR_NEWS_LIMIT || '100' }}
+          TREND_RADAR_FETCH_CONTENT_ENABLED: ${{ vars.TREND_RADAR_FETCH_CONTENT_ENABLED || secrets.TREND_RADAR_FETCH_CONTENT_ENABLED || 'true' }}
+          TREND_RADAR_CONTENT_MAX_ITEMS: ${{ vars.TREND_RADAR_CONTENT_MAX_ITEMS || secrets.TREND_RADAR_CONTENT_MAX_ITEMS || '3' }}
+          NEWS_CONTENT_CACHE_PATH: ${{ vars.NEWS_CONTENT_CACHE_PATH || secrets.NEWS_CONTENT_CACHE_PATH || './data/news_content_cache.db' }}
+          NEWS_CONTENT_FETCH_TIMEOUT: ${{ vars.NEWS_CONTENT_FETCH_TIMEOUT || secrets.NEWS_CONTENT_FETCH_TIMEOUT || '8' }}
+          NEWS_CONTENT_MAX_CHARS: ${{ vars.NEWS_CONTENT_MAX_CHARS || secrets.NEWS_CONTENT_MAX_CHARS || '2500' }}
+          NEWS_CONTENT_CACHE_TTL_HOURS: ${{ vars.NEWS_CONTENT_CACHE_TTL_HOURS || secrets.NEWS_CONTENT_CACHE_TTL_HOURS || '168' }}
+
           # ==========================================
           # 通知渠道（可同时配置多个）
           # ==========================================
@@ -446,6 +468,22 @@ jobs:
               ;;
             *)
               echo "  SearXNG Public Instances: ✅ 已启用"
+              ;;
+          esac
+          echo ""
+          echo "【被动新闻】"
+          case "${TREND_RADAR_NEWS_ENABLED,,}" in
+            1|true|yes|on)
+              echo "  TrendRadar: ✅ 已启用"
+              echo "  TrendRadar 输出目录: $TREND_RADAR_OUTPUT_DIR"
+              if [ -d "$TREND_RADAR_OUTPUT_DIR/news" ]; then
+                echo "  TrendRadar 新闻库: ✅ 已发现"
+              else
+                echo "  TrendRadar 新闻库: ⚠️ 未发现 $TREND_RADAR_OUTPUT_DIR/news"
+              fi
+              ;;
+            *)
+              echo "  TrendRadar: ⚪ 未启用"
               ;;
           esac
           echo ""

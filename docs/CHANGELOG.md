@@ -17,11 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [文档] 补充严格 temperature 兼容语义的官方来源、运行时依赖约束与 `LLM_TEMPERATURE` 回退/不回写路径说明。
 - [测试] 新增 Promptfoo Agent Chat 基线评测套件与 `npm run evals` 本地命令，覆盖支持回答、工具调用计划、上下文引用、业务规则和任务完成形态。
 - [修复] GitHub Actions 每日分析在 legacy key 模式下检测到 DeepSeek Key 时默认使用 `deepseek/deepseek-v4-flash`，并取消默认 Gemini fallback，避免云端任务误走 Gemini 限流。
+- [改进] GitHub Actions 每日分析工作流显式透传 TrendRadar 被动新闻配置，并支持可选检出 TrendRadar 输出仓库供云端 runner 读取本地新闻库。
 - [改进] 大盘复盘新增 TrendRadar 实时热点新闻输入，在不改变原行情、宽度和板块数据链路的前提下把本地新闻正文摘录注入 LLM 分析上下文。
+- [改进] 个股分析报告新增新闻决策影响字段，明确说明新闻是否改变、强化或削弱本次操作建议。
 - [新功能] 新增晚间“明日投资机会”报告，复用当日新闻、大盘复盘、板块/概念、人气股和涨停池数据生成机会板块、推理逻辑与个股推荐，并在次日下午大盘复盘中回看前一晚推荐表现。
 
 - [修复] 统一 Windows 桌面安装包与自动更新元数据文件名，避免 Release 中出现重复安装包并阻断 `latest.yml` 指向不存在附件。
 - [修复] 桌面端启动 WebUI 时为入口页增加 no-cache 响应头和版本化 cache-busting URL，避免安装新版后 Electron 继续复用旧 WebUI 缓存。
+- [改进] 新增根目录 `.cursorignore` 排除 `CLAUDE.md`，避免 Cursor 因软链接重复加载约 12.8KB 协作规则上下文。
+- [改进] 移除根目录 `CLAUDE.md` 软链接，以 `AGENTS.md` 作为 Cursor 与仓库协作规则的唯一入口，并同步更新 AI 治理校验脚本。
 
 ## [3.17.1] - 2026-05-16
 

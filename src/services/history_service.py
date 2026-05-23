@@ -665,6 +665,11 @@ class HistoryService:
             if intel.get('latest_news'):
                 report_lines.append("")
                 report_lines.append(f"**📢 {labels['latest_news_label']}**: {intel['latest_news']}")
+            if intel.get('news_decision_impact'):
+                report_lines.append("")
+                report_lines.append(
+                    f"**🧭 {labels['news_decision_impact_label']}**: {intel['news_decision_impact']}"
+                )
             report_lines.append("")
 
         # ========== 核心结论 ==========

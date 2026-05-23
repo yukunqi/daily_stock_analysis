@@ -79,6 +79,24 @@ class TestReportRenderer(unittest.TestCase):
         self.assertIn("核心结论", out)
         self.assertIn("作战计划", out)
 
+    def test_render_markdown_full_includes_news_decision_impact(self) -> None:
+        r = _make_result(
+            dashboard={
+                "core_conclusion": {"one_sentence": "观望等待"},
+                "intelligence": {
+                    "latest_news": "【2026-05-19】自动驾驶新闻",
+                    "news_decision_impact": "新闻强化行业情绪，但未改变观望结论。",
+                },
+                "battle_plan": {"sniper_points": {"stop_loss": "90"}},
+            }
+        )
+
+        out = render("markdown", [r], summary_only=False)
+
+        self.assertIsNotNone(out)
+        self.assertIn("新闻决策影响", out)
+        self.assertIn("新闻强化行业情绪，但未改变观望结论。", out)
+
     def test_render_wechat(self) -> None:
         """Wechat platform renders."""
         r = _make_result()

@@ -472,6 +472,31 @@ class TestNotificationServiceReportGeneration(unittest.TestCase):
         self.assertNotIn("gemini/gemini-2.5-flash", single)
 
     @mock.patch("src.notification.get_config")
+    def test_generate_dashboard_report_shows_news_decision_impact(self, mock_get_config: mock.MagicMock):
+        mock_get_config.return_value = _make_config(report_renderer_enabled=False)
+        service = NotificationService()
+        result = AnalysisResult(
+            code="002594",
+            name="比亚迪",
+            sentiment_score=42,
+            trend_prediction="看空",
+            operation_advice="观望",
+            analysis_summary="等待企稳",
+            dashboard={
+                "core_conclusion": {"one_sentence": "等待企稳"},
+                "intelligence": {
+                    "latest_news": "【2026-05-19】自动驾驶新闻",
+                    "news_decision_impact": "行业新闻只提供情绪支撑，未改变观望建议。",
+                },
+            },
+        )
+
+        out = service.generate_dashboard_report([result], report_date="2026-05-19")
+
+        self.assertIn("新闻决策影响", out)
+        self.assertIn("行业新闻只提供情绪支撑，未改变观望建议。", out)
+
+    @mock.patch("src.notification.get_config")
     def test_generate_dashboard_report_localizes_english_fallback(self, mock_get_config: mock.MagicMock):
         mock_get_config.return_value = _make_config(report_renderer_enabled=False, report_language="en")
         service = NotificationService()

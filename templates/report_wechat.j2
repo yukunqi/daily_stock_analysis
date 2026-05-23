@@ -28,6 +28,9 @@
 {% if intel.get('sentiment_summary') %}
 💭 {{ labels.sentiment_summary_label }}: {{ intel.sentiment_summary[:50] }}
 {% endif %}
+{% if intel.get('news_decision_impact') %}
+🧭 {{ labels.news_decision_impact_label }}: {{ intel.news_decision_impact[:60] }}
+{% endif %}
 
 {% if intel.get('risk_alerts') %}
 🚨 **{{ labels.risk_alerts_label }}**:

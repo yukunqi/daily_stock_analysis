@@ -48,6 +48,10 @@
 
 **📢 {{ labels.latest_news_label }}**: {{ intel.latest_news }}
 {% endif %}
+{% if intel.get('news_decision_impact') %}
+
+**🧭 {{ labels.news_decision_impact_label }}**: {{ intel.news_decision_impact }}
+{% endif %}
 
 {% endif %}
 

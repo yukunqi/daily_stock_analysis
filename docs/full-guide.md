@@ -322,6 +322,20 @@ daily_stock_analysis/
 | `NEWS_MAX_AGE_DAYS` | 新闻最大时效（天），搜索时限制结果在近期内 | 默认 `3` |
 | `BIAS_THRESHOLD` | 乖离率阈值（%），超过提示不追高；强势趋势股自动放宽到 1.5 倍 | 默认 `5.0` |
 
+### TrendRadar 被动新闻
+
+| 变量名 | 说明 | 必填 |
+|--------|------|:----:|
+| `TREND_RADAR_NEWS_ENABLED` | 启用 TrendRadar 本地 SQLite 新闻库作为被动新闻上下文，设为 `true` 后优先读取 `TREND_RADAR_OUTPUT_DIR/news/YYYY-MM-DD.db` | 可选 |
+| `TREND_RADAR_OUTPUT_DIR` | TrendRadar 输出目录；GitHub Actions 默认可配合 `TREND_RADAR_REPOSITORY` 使用 `./trendradar-source/output` | 可选 |
+| `TREND_RADAR_NEWS_DAYS` | 读取最近 N 天的 TrendRadar 新闻库 | 可选 |
+| `TREND_RADAR_NEWS_LIMIT` | 单次最多读取的 TrendRadar 新闻条数 | 可选 |
+| `TREND_RADAR_FETCH_CONTENT_ENABLED` | 对匹配新闻 URL 拉取正文摘录并注入分析上下文 | 可选 |
+| `TREND_RADAR_CONTENT_MAX_ITEMS` | 单只股票最多拉取正文的新闻条数 | 可选 |
+| `NEWS_CONTENT_CACHE_PATH` | 新闻正文缓存 SQLite 路径 | 可选 |
+
+> GitHub Actions：仓库自带 `daily_analysis.yml` 已显式映射上述 `TREND_RADAR_*` 与 `NEWS_CONTENT_*` 变量。云端 runner 不会读取你本机 `.env`，因此需要在 **Settings → Secrets and variables → Actions** 中配置 `TREND_RADAR_NEWS_ENABLED=true`。同时要让 runner 能看到 TrendRadar 的 `output/news/*.db`：可在 Repository Variables 中设置 `TREND_RADAR_REPOSITORY=owner/repo`，workflow 会把该仓库检出到 `./trendradar-source`；或者在自托管 runner 上把 `TREND_RADAR_OUTPUT_DIR` 指向已有的 TrendRadar 输出目录。
+
 > 行为说明：搜索服务与社交舆情服务为可选增强链路。任一服务初始化失败时，系统会记录 warning 并降级为跳过该服务，仅影响对应环节，不会阻塞技术面主链路和主任务流。
 
 ### 数据源配置

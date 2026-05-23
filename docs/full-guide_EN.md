@@ -291,6 +291,20 @@ For the notification baseline, diagnostics, and deployment notes, see [Notificat
 | `SEARXNG_BASE_URLS` | SearXNG self-hosted instances (quota-free fallback, enable format: json in settings.yml); when empty the app auto-discovers public instances | Optional |
 | `SEARXNG_PUBLIC_INSTANCES_ENABLED` | Auto-discover public SearXNG instances from `searx.space` when `SEARXNG_BASE_URLS` is empty (default `true`) | Optional |
 
+### TrendRadar Passive News
+
+| Variable | Description | Required |
+|--------|------|:----:|
+| `TREND_RADAR_NEWS_ENABLED` | Enable TrendRadar local SQLite news as passive news context; set to `true` to read `TREND_RADAR_OUTPUT_DIR/news/YYYY-MM-DD.db` first | Optional |
+| `TREND_RADAR_OUTPUT_DIR` | TrendRadar output directory; in GitHub Actions it can use the default `./trendradar-source/output` together with `TREND_RADAR_REPOSITORY` | Optional |
+| `TREND_RADAR_NEWS_DAYS` | Read TrendRadar news databases from the latest N days | Optional |
+| `TREND_RADAR_NEWS_LIMIT` | Maximum TrendRadar news items to load per run | Optional |
+| `TREND_RADAR_FETCH_CONTENT_ENABLED` | Fetch article excerpts from matched news URLs and inject them into analysis context | Optional |
+| `TREND_RADAR_CONTENT_MAX_ITEMS` | Maximum article bodies to fetch per stock | Optional |
+| `NEWS_CONTENT_CACHE_PATH` | SQLite cache path for fetched article content | Optional |
+
+> GitHub Actions: the bundled `daily_analysis.yml` explicitly maps the `TREND_RADAR_*` and `NEWS_CONTENT_*` variables. Cloud runners do not read your local `.env`, so configure `TREND_RADAR_NEWS_ENABLED=true` in **Settings → Secrets and variables → Actions**. The runner must also be able to see TrendRadar `output/news/*.db`: set Repository Variable `TREND_RADAR_REPOSITORY=owner/repo` to checkout that repository into `./trendradar-source`, or point `TREND_RADAR_OUTPUT_DIR` at an existing TrendRadar output directory on a self-hosted runner.
+
 > Behavior note: Search and social sentiment are optional enhancement services. If either service fails to initialize, the system logs a warning and degrades gracefully by skipping that stage without blocking the core analysis flow.
 
 ### Data Source Configuration
