@@ -279,6 +279,47 @@ class AnalysisApiContractTestCase(unittest.TestCase):
         self.assertEqual(status.market_review_report, "市场复盘报告示例文本")
         self.assertIsNone(status.result)
 
+    def test_get_analysis_status_normalizes_completed_queue_result_contract(self) -> None:
+        if get_analysis_status is None or analysis_endpoint_module is None:
+            self.skipTest("analysis endpoint helpers unavailable in this environment")
+
+        created_at = datetime(2026, 5, 21, 17, 40, 0)
+        queue = MagicMock()
+        queue.get_task.return_value = SimpleNamespace(
+            task_id="task-queue-1",
+            stock_code="600519",
+            stock_name="贵州茅台",
+            status=analysis_endpoint_module.TaskStatusEnum.COMPLETED,
+            progress=100,
+            result={
+                "stock_code": "600519",
+                "stock_name": "贵州茅台",
+                "report": {
+                    "meta": {"query_id": "task-queue-1", "stock_code": "600519"},
+                    "summary": {"analysis_summary": "summary"},
+                },
+            },
+            error=None,
+            original_query=None,
+            selection_source=None,
+            created_at=created_at,
+            completed_at=datetime(2026, 5, 21, 17, 45, 0),
+        )
+
+        with patch("api.v1.endpoints.analysis.get_task_queue", return_value=queue):
+            status = get_analysis_status("task-queue-1")
+
+        self.assertEqual(status.status, "completed")
+        self.assertIsNotNone(status.result)
+        self.assertEqual(status.result.query_id, "task-queue-1")
+        self.assertEqual(status.result.stock_code, "600519")
+        self.assertEqual(status.result.stock_name, "贵州茅台")
+        self.assertEqual(status.result.created_at, created_at.isoformat())
+        self.assertEqual(
+            status.result.report["summary"]["analysis_summary"],
+            "summary",
+        )
+
     def test_run_market_review_background_raises_when_report_is_empty(self) -> None:
         if analysis_endpoint_module is None:
             self.skipTest("analysis endpoint helpers unavailable in this environment")
@@ -536,6 +577,26 @@ class AnalysisApiContractTestCase(unittest.TestCase):
             ReportType.FULL,
 
         )
+
+    def test_analysis_service_passes_request_skills_to_pipeline(self) -> None:
+        service = object.__new__(AnalysisService)
+        pipeline_instance = MagicMock()
+        pipeline_instance.process_single_stock.return_value = object()
+        request_skills = ["growth_quality"]
+
+        with patch("src.config.get_config", return_value=SimpleNamespace()), \
+             patch("src.core.pipeline.StockAnalysisPipeline", return_value=pipeline_instance) as pipeline_cls, \
+             patch.object(AnalysisService, "_build_analysis_response", return_value={"stock_code": "600519"}):
+            result = AnalysisService.analyze_stock(
+                service,
+                "600519",
+                report_type="full",
+                query_id="q1",
+                skills=request_skills,
+            )
+
+        self.assertEqual(result, {"stock_code": "600519"})
+        self.assertEqual(pipeline_cls.call_args.kwargs["analysis_skills"], request_skills)
 
     def test_report_type_full_is_preserved_in_response_metadata(self) -> None:
         service = AnalysisService()
@@ -1523,6 +1584,42 @@ class BatchTaskQueueContractTestCase(unittest.TestCase):
         self.assertEqual([task.stock_code for task in accepted], ["600519"])
         self.assertEqual(duplicates, [])
         self.assertEqual(sorted(task.stock_code for task in queue._tasks.values()), ["600519"])
+
+    def test_batch_submit_and_worker_use_copied_request_skills(self) -> None:
+        class CapturingExecutor:
+            def __init__(self) -> None:
+                self.calls = []
+
+            def submit(self, fn, *args, **kwargs):
+                self.calls.append((fn, args, kwargs))
+                return Future()
+
+        queue = AnalysisTaskQueue(max_workers=1)
+        executor = CapturingExecutor()
+        queue._executor = executor
+        request_skills = ["growth_quality"]
+
+        accepted, duplicates = queue.submit_tasks_batch(
+            ["600519"],
+            report_type="detailed",
+            skills=request_skills,
+        )
+        request_skills.append("mutated_after_submit")
+
+        self.assertEqual(duplicates, [])
+        self.assertEqual(accepted[0].skills, ["growth_quality"])
+        self.assertIs(executor.calls[0][1][-1], accepted[0].skills)
+
+        service_instance = MagicMock()
+        service_instance.analyze_stock.return_value = {"stock_name": "贵州茅台"}
+        with patch("src.services.analysis_service.AnalysisService", return_value=service_instance):
+            executor.calls[0][0](*executor.calls[0][1])
+
+        self.assertIs(
+            service_instance.analyze_stock.call_args.kwargs["skills"],
+            accepted[0].skills,
+        )
+        self.assertEqual(service_instance.analyze_stock.call_args.kwargs["skills"], ["growth_quality"])
 
     def test_batch_submit_deduplicates_equivalent_stock_code_shapes(self) -> None:
         queue = AnalysisTaskQueue(max_workers=1)

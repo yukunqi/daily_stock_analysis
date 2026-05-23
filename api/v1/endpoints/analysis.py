@@ -324,6 +324,7 @@ def _handle_async_analysis_batch(
     original_query = request.original_query if (is_single or preserve_batch_metadata) else None
     selection_source = request.selection_source if (is_single or preserve_batch_metadata) else None
     notify = getattr(request, "notify", True)
+    skills = getattr(request, "skills", None)
 
     submit_kwargs = dict(
         stock_codes=stock_codes,
@@ -334,6 +335,8 @@ def _handle_async_analysis_batch(
         force_refresh=request.force_refresh,
         notify=notify,
     )
+    if skills is not None:
+        submit_kwargs["skills"] = skills
 
     accepted_tasks, duplicate_errors = task_queue.submit_tasks_batch(**submit_kwargs)
 
@@ -415,6 +418,7 @@ def _handle_sync_analysis(
             force_refresh=request.force_refresh,
             query_id=query_id,
             send_notification=getattr(request, "notify", True),
+            skills=getattr(request, "skills", None),
         )
 
         if result is None:
@@ -687,6 +691,54 @@ def _format_sse_event(event_type: str, data: Dict[str, Any]) -> str:
     return f"event: {event_type}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+def _datetime_to_iso(value: Any) -> Optional[str]:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, str) and value.strip():
+        return value
+    return None
+
+
+def _extract_report_created_at(payload: Dict[str, Any]) -> Optional[str]:
+    report = payload.get("report")
+    if not isinstance(report, dict):
+        return None
+
+    meta = report.get("meta")
+    if not isinstance(meta, dict):
+        return None
+
+    return _datetime_to_iso(meta.get("created_at"))
+
+
+def _build_task_analysis_result(task: Any) -> AnalysisResultResponse:
+    """
+    Normalize an in-memory completed task result to the public API contract.
+
+    Older AnalysisService payloads contain stock_code/stock_name/report only.
+    The status endpoint owns the task metadata, so it can supply the missing
+    response fields without waiting for the database fallback path.
+    """
+    payload = dict(task.result)
+    if not payload.get("query_id"):
+        payload["query_id"] = task.task_id
+    if not payload.get("stock_code"):
+        payload["stock_code"] = task.stock_code
+
+    if not payload.get("stock_name") and getattr(task, "stock_name", None):
+        payload["stock_name"] = task.stock_name
+
+    if not payload.get("created_at"):
+        payload["created_at"] = (
+            _extract_report_created_at(payload)
+            or _datetime_to_iso(getattr(task, "created_at", None))
+            or _datetime_to_iso(getattr(task, "completed_at", None))
+            or datetime.now().isoformat()
+        )
+
+    return AnalysisResultResponse.model_validate(payload)
+
+
 # ============================================================
 # GET /status/{task_id} - 查询单个任务状态
 # ============================================================
@@ -731,7 +783,7 @@ def get_analysis_status(task_id: str) -> TaskStatus:
                     market_review_report = report_text
             else:
                 try:
-                    result = AnalysisResultResponse.model_validate(task.result)
+                    result = _build_task_analysis_result(task)
                 except Exception:
                     logger.warning(
                         "解析任务结果失败，回退为空返回: task_id=%s",
@@ -748,6 +800,7 @@ def get_analysis_status(task_id: str) -> TaskStatus:
             stock_name=task.stock_name,
             original_query=task.original_query,
             selection_source=task.selection_source,
+            skills=getattr(task, "skills", None),
         )
     
     # 2. 从数据库查询已完成的记录
@@ -789,8 +842,12 @@ def get_analysis_status(task_id: str) -> TaskStatus:
             # Extract current_price / change_pct from context_snapshot
             current_price = None
             change_pct = None
+            skills = None
             context_snapshot = parse_json_field(getattr(record, 'context_snapshot', None))
             if context_snapshot and isinstance(context_snapshot, dict):
+                raw_skills = context_snapshot.get("skills")
+                if isinstance(raw_skills, list):
+                    skills = [str(skill) for skill in raw_skills]
                 enhanced_context = context_snapshot.get('enhanced_context') or {}
                 realtime = enhanced_context.get('realtime') or {}
                 current_price = realtime.get('price')
@@ -841,7 +898,8 @@ def get_analysis_status(task_id: str) -> TaskStatus:
                     report=report_dict,
                     created_at=record.created_at.isoformat() if record.created_at else datetime.now().isoformat()
                 ),
-                error=None
+                error=None,
+                skills=skills,
             )
 
     except Exception as e:

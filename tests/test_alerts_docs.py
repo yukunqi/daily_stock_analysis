@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Contract checks for the alert-center P0 documentation."""
+"""Contract checks for the alert-center documentation."""
 
 from pathlib import Path
 
@@ -15,7 +15,7 @@ def _read_doc() -> str:
 def test_alerts_doc_exists_and_links_p0_scope() -> None:
     doc = _read_doc()
 
-    assert "Issue #1202 P0" in doc
+    assert "Issue #1202" in doc
     assert "AGENT_EVENT_ALERT_RULES_JSON" in doc
     assert "EventMonitor" in doc
     assert "P1 Alert API MVP" in doc
@@ -130,6 +130,22 @@ def test_alerts_doc_keeps_p1_non_goals_explicit() -> None:
         assert token in doc
 
 
+def test_alerts_doc_defines_p2_worker_scope() -> None:
+    doc = _read_doc()
+
+    for token in (
+        "## P2 告警评估 Worker",
+        "src/services/alert_worker.py",
+        "agent_event_monitor",
+        "持久化 active rules",
+        "legacy JSON",
+        "`triggered`、`skipped`、`degraded`、`failed`",
+        "不写 `alert_notifications`",
+        "不执行 `cooldown_policy`",
+    ):
+        assert token in doc
+
+
 def test_alerts_doc_describes_p1_rollback_for_created_tables() -> None:
     doc = _read_doc()
 
@@ -141,3 +157,109 @@ def test_alerts_doc_describes_p1_rollback_for_created_tables() -> None:
         "手动删除相关表",
     ):
         assert token in doc
+
+
+def test_alerts_doc_defines_p4_notification_and_cooldown_scope() -> None:
+    doc = _read_doc()
+
+    for token in (
+        "## P4 通知结果与持久化冷却",
+        "`alert_cooldowns`",
+        "`alert_notifications`",
+        "`rule_id + target + data_source + data_timestamp`",
+        "同一数据点去重",
+        "`data_timestamp` 缺失时不做去重",
+        "`__cooldown__`",
+        "`__cooldown_read_failed__`",
+        "`__noise_suppressed__`",
+        "notification_noise.py",
+        "DB 持久化规则正常路径使用 `alert_cooldowns`",
+        "读取持久化冷却状态失败",
+        "legacy `AGENT_EVENT_ALERT_RULES_JSON` 规则继续使用 worker 进程内 fingerprint",
+        "不会写入或延长 `alert_cooldowns`",
+        "最小回滚方式是 revert P4 PR",
+    ):
+        assert token in doc
+
+
+def test_alerts_doc_defines_p5_indicator_scope() -> None:
+    doc = _read_doc()
+
+    for token in (
+        "## P5 技术指标规则",
+        "ma_price_cross",
+        "rsi_threshold",
+        "macd_cross",
+        "kdj_cross",
+        "cci_threshold",
+        "compute_required_bars",
+        "requested_days",
+        "required_bars > 365",
+        "最近两根已收盘日线",
+        "prev <= threshold < current",
+        "Wilder",
+        "SMMA",
+        "alpha=1/period",
+        "EMA(fast_period)",
+        "alpha=1/k_period",
+        "0.015 * mean_deviation",
+        "服务器本地时区启发式",
+        "16:00",
+        "日期不可判定都会保守丢弃",
+        "legacy JSON 路径",
+        "不扩展 `src/agent/events.py`",
+        "HTTP 400 + `validation_error`",
+        "HTTP 400 + `unsupported_alert_type`",
+        "不支持 MACD 柱体放大/收缩",
+        "不支持 KDJ 超买/超卖区规则",
+        "不支持 MA 与 MA 双均线交叉",
+        "不支持分钟线",
+        "revert P5 PR",
+        "skip unsupported `alert_type`",
+    ):
+        assert token in doc
+
+
+def test_alerts_doc_defines_p6_portfolio_and_watchlist_scope() -> None:
+    doc = _read_doc()
+
+    for token in (
+        "## P6 持仓与自选股联动",
+        "P6 scope/type 矩阵",
+        "`watchlist`",
+        "`portfolio_holdings`",
+        "`portfolio_account`",
+        "`portfolio_stop_loss`",
+        "`portfolio_concentration`",
+        "`portfolio_drawdown`",
+        "`portfolio_price_stale`",
+        "Target Identity Contract",
+        "`effective_target`",
+        "`RuntimeAlertRule.key`",
+        "`{parent_key}|{effective_target}`",
+        "dry-run",
+        "`degraded_count`",
+        "soft cap",
+        "cooldown_active",
+        "父规则摘要",
+        "legacy `AGENT_EVENT_ALERT_RULES_JSON` 不支持 watchlist、portfolio",
+        "sector 级集中度",
+        "P6 PR",
+    ):
+        assert token in doc
+
+
+def test_changelog_mentions_alert_p6_release_note() -> None:
+    changelog = (PROJECT_ROOT / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
+
+    assert "P6" in changelog
+    assert "自选股" in changelog
+    assert "持仓" in changelog
+    assert "账户联动规则" in changelog
+
+
+def test_changelog_unreleased_keeps_flat_entries() -> None:
+    changelog = (PROJECT_ROOT / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
+    unreleased = changelog.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+
+    assert "\n### " not in unreleased
